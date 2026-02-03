@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SO-ARM101 Robot URDF - Adapted from TheRobotStudio/SO-ARM100 -->
+<!-- Original: https://github.com/TheRobotStudio/SO-ARM100/blob/main/Simulation/SO101/so101_new_calib.urdf -->
+<robot name="so_arm101">
+
+  <!-- Materials -->
+  <material name="3d_printed">
+    <color rgba="1.0 0.82 0.12 1.0"/>
+  </material>
+  <material name="sts3215">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <!-- Link base -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.0137179 -5.19711e-05 0.0334843" rpy="0 0 0"/>
+      <mass value="0.147"/>
+      <inertia ixx="0.000114686" ixy="-4.59787e-07" ixz="4.97151e-06" iyy="0.000136117" iyz="9.75275e-08" izz="0.000130364"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.0437" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.08 0.087"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0437" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.08 0.087"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link shoulder -->
+  <link name="shoulder_link">
+    <inertial>
+      <origin xyz="-0.0307604 -1.66727e-05 -0.0252713" rpy="0 0 0"/>
+      <mass value="0.100006"/>
+      <inertia ixx="8.3759e-05" ixy="7.55525e-08" ixz="-1.16342e-06" iyy="8.10403e-05" iyz="1.54663e-07" izz="2.39783e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.03 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.04 0.08"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.03 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.06 0.04 0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link upper_arm -->
+  <link name="upper_arm_link">
+    <inertial>
+      <origin xyz="-0.0898471 -0.00838224 0.0184089" rpy="0 0 0"/>
+      <mass value="0.103"/>
+      <inertia ixx="4.08002e-05" ixy="-1.97819e-05" ixz="-4.03016e-08" iyy="0.000147318" iyz="8.97326e-09" izz="0.000142487"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.056 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.112 0.035 0.035"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.056 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.112 0.035 0.035"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link lower_arm -->
+  <link name="lower_arm_link">
+    <inertial>
+      <origin xyz="-0.0980701 0.00324376 0.0182831" rpy="0 0 0"/>
+      <mass value="0.104"/>
+      <inertia ixx="2.87438e-05" ixy="7.41152e-06" ixz="1.26409e-06" iyy="0.000159844" iyz="-4.90188e-08" izz="0.00014529"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.067 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.134 0.035 0.035"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="-0.067 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.134 0.035 0.035"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link wrist -->
+  <link name="wrist_link">
+    <inertial>
+      <origin xyz="-0.000103312 -0.0386143 0.0281156" rpy="0 0 0"/>
+      <mass value="0.079"/>
+      <inertia ixx="3.68263e-05" ixy="1.7893e-08" ixz="-5.28128e-08" iyy="2.5391e-05" iyz="3.6412e-06" izz="2.1e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 -0.03 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.035 0.06 0.035"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.03 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.035 0.06 0.035"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Link gripper -->
+  <link name="gripper_link">
+    <inertial>
+      <origin xyz="0.000213627 0.000245138 -0.025187" rpy="0 0 0"/>
+      <mass value="0.087"/>
+      <inertia ixx="2.75087e-05" ixy="-3.35241e-07" ixz="-5.7352e-06" iyy="4.33657e-05" iyz="-5.17847e-08" izz="3.45059e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.04" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.08"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.04" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Gripper frame (end effector reference point) -->
+  <link name="gripper_frame_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1e-9"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+
+  <joint name="gripper_frame_joint" type="fixed">
+    <origin xyz="0 0 -0.098" rpy="0 0 0"/>
+    <parent link="gripper_link"/>
+    <child link="gripper_frame_link"/>
+  </joint>
+
+  <!-- Moving jaw link (for gripper) -->
+  <link name="moving_jaw_link">
+    <inertial>
+      <origin xyz="-0.00157495 -0.0300244 0.0192755" rpy="0 0 0"/>
+      <mass value="0.012"/>
+      <inertia ixx="6.61427e-06" ixy="-3.19807e-07" ixz="-5.90717e-09" iyy="1.89032e-06" iyz="-1.09945e-07" izz="5.28738e-06"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 -0.02 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.01 0.04 0.02"/>
+      </geometry>
+      <material name="3d_printed"/>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.02 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.01 0.04 0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- Joint: gripper (jaw) -->
+  <joint name="gripper" type="revolute">
+    <origin xyz="0.02 0.02 -0.023" rpy="1.5708 0 0"/>
+    <parent link="gripper_link"/>
+    <child link="moving_jaw_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-0.174533" upper="1.74533"/>
+  </joint>
+
+  <!-- Joint: wrist_roll -->
+  <joint name="wrist_roll" type="revolute">
+    <origin xyz="0 -0.061 0.018" rpy="1.5708 0 3.14159"/>
+    <parent link="wrist_link"/>
+    <child link="gripper_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-2.74385" upper="2.84121"/>
+  </joint>
+
+  <!-- Joint: wrist_flex -->
+  <joint name="wrist_flex" type="revolute">
+    <origin xyz="-0.1349 0.005 0" rpy="0 0 -1.5708"/>
+    <parent link="lower_arm_link"/>
+    <child link="wrist_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.65806" upper="1.65806"/>
+  </joint>
+
+  <!-- Joint: elbow_flex -->
+  <joint name="elbow_flex" type="revolute">
+    <origin xyz="-0.11257 -0.028 0" rpy="0 0 1.5708"/>
+    <parent link="upper_arm_link"/>
+    <child link="lower_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.69" upper="1.69"/>
+  </joint>
+
+  <!-- Joint: shoulder_lift -->
+  <joint name="shoulder_lift" type="revolute">
+    <origin xyz="-0.030 -0.018 -0.054" rpy="-1.5708 -1.5708 0"/>
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.74533" upper="1.74533"/>
+  </joint>
+
+  <!-- Joint: shoulder_pan -->
+  <joint name="shoulder_pan" type="revolute">
+    <origin xyz="0.039 0 0.062" rpy="3.14159 0 -3.14159"/>
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-1.91986" upper="1.91986"/>
+  </joint>
+
+</robot>
