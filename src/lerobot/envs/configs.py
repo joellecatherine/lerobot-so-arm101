@@ -452,3 +452,66 @@ class IsaaclabArenaEnv(HubEnvConfig):
     @property
     def gym_kwargs(self) -> dict:
         return {}
+
+
+@EnvConfig.register_subclass("highfive")
+@dataclass
+class HighFiveEnvConfig(EnvConfig):
+    """Configuration for High-Five Robot Environment.
+
+    A MuJoCo-based environment where a SO-ARM101 robot arm tracks and
+    intercepts a moving hand target for a high-five/fist-bump interaction.
+    """
+
+    task: str = "highfive-v0"
+    fps: int = 30
+    episode_length: int = 200
+    obs_type: str = "pixels_agent_pos"
+    render_mode: str = "rgb_array"
+    observation_height: int = 224
+    observation_width: int = 224
+    camera_name: str = "birdseye"
+    hand_motion_type: str = "sinusoidal"  # "static", "random", "sinusoidal", "tracking"
+    domain_randomization: bool = True
+    features: dict[str, PolicyFeature] = field(
+        default_factory=lambda: {
+            ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
+        }
+    )
+    features_map: dict[str, str] = field(
+        default_factory=lambda: {
+            ACTION: ACTION,
+            "agent_pos": OBS_STATE,
+            "pixels/image": f"{OBS_IMAGES}.image",
+        }
+    )
+
+    def __post_init__(self):
+        if self.obs_type == "pixels":
+            self.features["pixels/image"] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(self.observation_height, self.observation_width, 3),
+            )
+        elif self.obs_type == "pixels_agent_pos":
+            self.features["agent_pos"] = PolicyFeature(
+                type=FeatureType.STATE,
+                shape=(5,),  # 5 joint positions
+            )
+            self.features["pixels/image"] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(self.observation_height, self.observation_width, 3),
+            )
+        else:
+            raise ValueError(f"Unsupported obs_type: {self.obs_type}")
+
+    @property
+    def gym_kwargs(self) -> dict:
+        return {
+            "obs_type": self.obs_type,
+            "render_mode": self.render_mode,
+            "observation_width": self.observation_width,
+            "observation_height": self.observation_height,
+            "camera_name": self.camera_name,
+            "hand_motion_type": self.hand_motion_type,
+            "domain_randomization": self.domain_randomization,
+        }

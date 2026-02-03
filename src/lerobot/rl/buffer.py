@@ -126,7 +126,11 @@ class ReplayBuffer:
 
         if image_augmentation_function is None:
             base_function = functools.partial(random_shift, pad=4)
-            self.image_augmentation_function = torch.compile(base_function)
+            # torch.compile is not fully supported on MPS, skip compilation for MPS devices
+            if "mps" in device or "mps" in storage_device:
+                self.image_augmentation_function = base_function
+            else:
+                self.image_augmentation_function = torch.compile(base_function)
         self.use_drq = use_drq
 
     def _initialize_storage(
@@ -204,13 +208,13 @@ class ReplayBuffer:
 
         # Store the transition in pre-allocated tensors
         for key in self.states:
-            self.states[key][self.position].copy_(state[key].squeeze(dim=0))
+            self.states[key][self.position].copy_(state[key].squeeze(0))
 
             if not self.optimize_memory:
                 # Only store next_states if not optimizing memory
-                self.next_states[key][self.position].copy_(next_state[key].squeeze(dim=0))
+                self.next_states[key][self.position].copy_(next_state[key].squeeze(0))
 
-        self.actions[self.position].copy_(action.squeeze(dim=0))
+        self.actions[self.position].copy_(action.squeeze(0))
         self.rewards[self.position] = reward
         self.dones[self.position] = done
         self.truncateds[self.position] = truncated
@@ -222,7 +226,7 @@ class ReplayBuffer:
                 if key in complementary_info:
                     value = complementary_info[key]
                     if isinstance(value, torch.Tensor):
-                        self.complementary_info[key][self.position].copy_(value.squeeze(dim=0))
+                        self.complementary_info[key][self.position].copy_(value.squeeze(0))
                     elif isinstance(value, (int | float)):
                         self.complementary_info[key][self.position] = value
 

@@ -11,5 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""High-Five Robot Environment for SO-ARM101.
 
-from .configs import AlohaEnv, EnvConfig, HighFiveEnvConfig, HubEnvConfig, PushtEnv  # noqa: F401
+A MuJoCo-based environment where a robot arm tracks and intercepts
+a moving hand target for a high-five/fist-bump interaction.
+"""
+
+from lerobot.envs.highfive.highfive_env import HighFiveEnv, create_highfive_envs
+
+__all__ = ["HighFiveEnv", "create_highfive_envs"]
