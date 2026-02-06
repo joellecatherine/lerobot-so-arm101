@@ -85,8 +85,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--buffer_capacity",
         type=int,
-        default=100_000,
-        help="Replay buffer capacity",
+        default=50_000,
+        help="Replay buffer capacity (reduced for memory efficiency with images)",
     )
     parser.add_argument(
         "--warmup_steps",
@@ -124,8 +124,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--observation_size",
         type=int,
-        default=224,
-        help="Observation image size (square)",
+        default=84,
+        help="Observation image size (square). 84 is standard for image-based RL.",
     )
 
     # Logging and saving
@@ -197,6 +197,12 @@ def parse_args() -> argparse.Namespace:
         "--render",
         action="store_true",
         help="Enable visualization during training",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint directory to resume training from",
     )
 
     return parser.parse_args()
@@ -434,6 +440,31 @@ def train(args: argparse.Namespace):
     print(f"Creating SAC policy on device: {args.device}")
     policy, policy_config = create_policy(args, env)
 
+    # Resume from checkpoint if specified
+    resume_step = 0
+    if args.resume:
+        from safetensors.torch import load_model as load_model_as_safetensor
+
+        resume_path = Path(args.resume)
+        if resume_path.exists():
+            print(f"Resuming from checkpoint: {resume_path}")
+            model_file = resume_path / "model.safetensors"
+            if model_file.exists():
+                load_model_as_safetensor(policy, str(model_file), strict=False)
+                print(f"Loaded weights from {model_file}")
+            else:
+                print(f"Warning: {model_file} not found")
+
+            # Try to extract step number from path (e.g., "step_20000")
+            if "step_" in resume_path.name:
+                try:
+                    resume_step = int(resume_path.name.split("step_")[1])
+                    print(f"Resuming from step {resume_step}")
+                except ValueError:
+                    pass
+        else:
+            print(f"Warning: Checkpoint path {resume_path} not found, starting from scratch")
+
     # Create replay buffer
     from lerobot.rl.buffer import ReplayBuffer
     from lerobot.utils.constants import OBS_IMAGES, OBS_STATE
@@ -449,7 +480,7 @@ def train(args: argparse.Namespace):
     optimizer = optim.Adam(policy.parameters(), lr=args.learning_rate)
 
     # Training state
-    global_step = 0
+    global_step = resume_step
     episode_count = 0
     best_success_rate = 0.0
 
@@ -648,8 +679,12 @@ def main():
     print(f"Total steps: {args.num_steps:,}")
     print(f"Batch size: {args.batch_size}")
     print(f"Learning rate: {args.learning_rate}")
+    print(f"Buffer capacity: {args.buffer_capacity:,}")
+    print(f"Observation size: {args.observation_size}x{args.observation_size}")
     print(f"Hand motion type: {args.hand_motion_type}")
     print(f"Domain randomization: {args.domain_randomization}")
+    if args.resume:
+        print(f"Resuming from: {args.resume}")
     print("=" * 60)
 
     train(args)
