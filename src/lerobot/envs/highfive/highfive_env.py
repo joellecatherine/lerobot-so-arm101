@@ -162,6 +162,9 @@ class HighFiveEnv(gym.Env):
         # Viewer for human rendering
         self._viewer = None
 
+        # Cached renderers for each camera (prevents resource leak)
+        self._renderers = {}
+
         # Define observation space
         self._setup_observation_space()
 
@@ -269,11 +272,14 @@ class HighFiveEnv(gym.Env):
             self._model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name
         )
 
-        # Create renderer if needed
-        renderer = mujoco.Renderer(self._model, width=width, height=height)
+        # Create or reuse cached renderer for this camera/size combination
+        renderer_key = (camera_name, width, height)
+        if renderer_key not in self._renderers:
+            self._renderers[renderer_key] = mujoco.Renderer(self._model, width=width, height=height)
+
+        renderer = self._renderers[renderer_key]
         renderer.update_scene(self._data, camera=camera_id)
         image = renderer.render()
-        renderer.close()
 
         return image
 
@@ -622,6 +628,11 @@ class HighFiveEnv(gym.Env):
         if self._viewer is not None:
             self._viewer.close()
             self._viewer = None
+
+        # Close cached renderers
+        for renderer in self._renderers.values():
+            renderer.close()
+        self._renderers.clear()
 
 
 def _make_env_fns(
