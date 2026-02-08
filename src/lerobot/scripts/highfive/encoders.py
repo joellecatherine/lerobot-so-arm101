@@ -6,6 +6,7 @@ Supports:
 - RGB or RGBD (with depth) input
 - Concatenation or cross-attention fusion
 - Frozen or trainable ResNet backbones
+- Dedicated DepthCNN for depth-only inputs (no pretrained weights)
 """
 
 from __future__ import annotations
@@ -16,6 +17,85 @@ import torch.nn.functional as F
 from torch import Tensor
 from torchvision import models
 from torchvision.models import ResNet18_Weights
+
+
+class DepthCNN(nn.Module):
+    """
+    Simple CNN for depth image encoding, trained from scratch.
+
+    Unlike ResNet with ImageNet weights, this network is designed specifically
+    for depth data. ImageNet pretraining doesn't transfer to depth because:
+    - Depth has different statistics (smooth gradients, no textures)
+    - Depth encodes geometry, not appearance
+
+    For complex 3D scenes, consider PointPillars or sparse convolutions.
+    For this simple high-five task, a lightweight CNN is sufficient.
+
+    Args:
+        output_dim: Output feature dimension (default: 256)
+    """
+
+    def __init__(self, output_dim: int = 256):
+        super().__init__()
+        self.output_dim = output_dim
+
+        # Simple 4-layer CNN, trained from scratch
+        self.features = nn.Sequential(
+            # Layer 1: (1, 84, 84) -> (32, 40, 40)
+            nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+
+            # Layer 2: (32, 40, 40) -> (64, 19, 19)
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            # Layer 3: (64, 19, 19) -> (128, 9, 9)
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+
+            # Layer 4: (128, 9, 9) -> (256, 4, 4)
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            # Global pooling: (256, 4, 4) -> (256, 1, 1)
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+        )
+
+        # Final projection to output_dim
+        self.fc = nn.Linear(256, output_dim)
+
+        # Initialize weights (He initialization for ReLU)
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Args:
+            x: (B, 1, H, W) depth image
+
+        Returns:
+            (B, output_dim) feature vector
+        """
+        x = self.features(x)
+        x = self.fc(x)
+        return x
 
 # Keys used by LeRobot
 OBS_IMAGES = "observation.images"
@@ -106,6 +186,7 @@ class FlexibleCameraEncoder(nn.Module):
         fusion: Fusion method - "concat" or "cross_attention"
         use_depth: Whether input has depth channel (4 channels vs 3)
         single_camera: Use only birdseye camera
+        bev_depth_wrist_rgb: Asymmetric mode - BEV depth-only (1ch) + Wrist RGB (3ch)
     """
 
     def __init__(
@@ -117,6 +198,9 @@ class FlexibleCameraEncoder(nn.Module):
         fusion: str = "concat",
         use_depth: bool = False,
         single_camera: bool = False,
+        bev_depth_wrist_rgb: bool = False,
+        birdseye_channels: int | None = None,
+        wrist_channels: int | None = None,
     ):
         super().__init__()
         self.latent_dim = latent_dim
@@ -125,19 +209,42 @@ class FlexibleCameraEncoder(nn.Module):
         self.fusion = fusion
         self.use_depth = use_depth
         self.single_camera = single_camera
+        self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
 
-        # Input channels: 3 for RGB, 4 for RGBD
-        in_channels = 4 if use_depth else 3
+        # Determine input channels for each camera
+        # If explicit channels provided (e.g., from frame stacking), use those
+        if birdseye_channels is not None:
+            self._birdseye_channels = birdseye_channels
+            self._wrist_channels = wrist_channels if wrist_channels is not None else 3
+        elif bev_depth_wrist_rgb:
+            # Asymmetric: BEV gets depth-only (1 channel), Wrist gets RGB (3 channels)
+            self._birdseye_channels = 1
+            self._wrist_channels = 3
+        else:
+            # Symmetric: both cameras get same channels
+            self._birdseye_channels = 4 if use_depth else 3
+            self._wrist_channels = 4 if use_depth else 3
 
-        # Create ResNet backbone(s)
+        # Create encoder backbones
         weights = ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
-        self.encoder_birdseye = self._make_resnet_backbone(weights, in_channels)
+
+        if bev_depth_wrist_rgb:
+            # Use dedicated DepthCNN for BEV depth (no pretrained weights - trained from scratch)
+            # This is more principled than using ImageNet-pretrained ResNet on depth
+            self.encoder_birdseye = DepthCNN(output_dim=512)  # Match ResNet output dim
+            self._use_depth_cnn = True
+        else:
+            self.encoder_birdseye = self._make_resnet_backbone(weights, self._birdseye_channels)
+            self._use_depth_cnn = False
 
         if not single_camera:
-            self.encoder_wrist = self._make_resnet_backbone(weights, in_channels)
+            # Wrist always uses ResNet (RGB benefits from ImageNet pretraining)
+            self.encoder_wrist = self._make_resnet_backbone(weights, self._wrist_channels)
 
         if freeze_backbones:
-            self._freeze(self.encoder_birdseye)
+            # Don't freeze DepthCNN - it has no pretrained weights and must train from scratch
+            if not self._use_depth_cnn:
+                self._freeze(self.encoder_birdseye)
             if not single_camera:
                 self._freeze(self.encoder_wrist)
 
@@ -174,21 +281,32 @@ class FlexibleCameraEncoder(nn.Module):
         )
 
     def _make_resnet_backbone(self, weights, in_channels: int = 3) -> nn.Module:
-        """ResNet-18 without final FC layer, optionally with modified input channels."""
+        """ResNet-18 without final FC layer, optionally with modified input channels.
+
+        Handles arbitrary input channels (e.g., from frame stacking: 12 = 3 RGB * 4 frames).
+        Initializes new channels by tiling/averaging pretrained RGB weights.
+        """
         resnet = models.resnet18(weights=weights)
 
-        # Modify first conv layer if using depth (4 channels instead of 3)
+        # Modify first conv layer if not standard 3 channels
         if in_channels != 3:
             old_conv = resnet.conv1
             resnet.conv1 = nn.Conv2d(
                 in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
             )
-            # Initialize new channels with mean of RGB weights
+
+            # Initialize weights for arbitrary channel counts
             with torch.no_grad():
-                resnet.conv1.weight[:, :3] = old_conv.weight
-                if in_channels > 3:
-                    # Initialize depth channel with mean of RGB
-                    resnet.conv1.weight[:, 3:] = old_conv.weight.mean(dim=1, keepdim=True)
+                if in_channels < 3:
+                    # Fewer channels (e.g., depth-only): average RGB weights
+                    resnet.conv1.weight[:, :in_channels] = old_conv.weight[:, :in_channels]
+                else:
+                    # More channels (e.g., frame stacking): tile RGB weights
+                    # For 12 channels (4 frames of RGB): repeat RGB weights 4 times
+                    n_repeats = (in_channels + 2) // 3  # ceiling division
+                    tiled = old_conv.weight.repeat(1, n_repeats, 1, 1)[:, :in_channels]
+                    # Scale down to maintain similar activation magnitudes
+                    resnet.conv1.weight.copy_(tiled / n_repeats)
 
         return nn.Sequential(
             resnet.conv1,
@@ -208,9 +326,10 @@ class FlexibleCameraEncoder(nn.Module):
             p.requires_grad = False
 
     def unfreeze_backbones(self):
-        """Unfreeze ResNet backbones for fine-tuning."""
-        for p in self.encoder_birdseye.parameters():
-            p.requires_grad = True
+        """Unfreeze ResNet backbones for fine-tuning (DepthCNN is always trainable)."""
+        if not self._use_depth_cnn:
+            for p in self.encoder_birdseye.parameters():
+                p.requires_grad = True
         if not self.single_camera:
             for p in self.encoder_wrist.parameters():
                 p.requires_grad = True
@@ -273,9 +392,13 @@ class SACEncoderAdapter(nn.Module):
         fusion: str = "concat",
         use_depth: bool = False,
         single_camera: bool = False,
+        bev_depth_wrist_rgb: bool = False,
+        birdseye_channels: int | None = None,
+        wrist_channels: int | None = None,
     ):
         super().__init__()
         self.single_camera = single_camera
+        self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
 
         self.encoder = FlexibleCameraEncoder(
             latent_dim=latent_dim,
@@ -285,6 +408,9 @@ class SACEncoderAdapter(nn.Module):
             fusion=fusion,
             use_depth=use_depth,
             single_camera=single_camera,
+            bev_depth_wrist_rgb=bev_depth_wrist_rgb,
+            birdseye_channels=birdseye_channels,
+            wrist_channels=wrist_channels,
         )
         self._output_dim = self.encoder.output_dim
 

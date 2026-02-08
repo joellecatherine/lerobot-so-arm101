@@ -155,6 +155,17 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Scale factor for hand motion frequency (0.5 = half speed)",
     )
+    parser.add_argument(
+        "--bev_depth_wrist_rgb",
+        action="store_true",
+        help="Asymmetric sensors: BEV depth-only (1ch) + Wrist RGB (3ch)",
+    )
+    parser.add_argument(
+        "--frame_stack",
+        type=int,
+        default=1,
+        help="Number of frames to stack for temporal context (1=no stacking, 4=common choice)",
+    )
 
     # Logging and saving
     parser.add_argument(
@@ -267,11 +278,18 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         motion_freq_scale=args.motion_freq_scale,
         use_depth=args.use_depth,
         single_camera=args.single_camera,
+        bev_depth_wrist_rgb=args.bev_depth_wrist_rgb,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
     # Get the vectorized environment (single task, task_id=0)
     vec_env = env_dict["highfive"][0]
+
+    # Apply frame stacking if requested
+    if args.frame_stack > 1:
+        from lerobot.scripts.highfive.frame_stack import VecFrameStackWrapper
+        vec_env = VecFrameStackWrapper(vec_env, n_frames=args.frame_stack)
+        print(f"Applied frame stacking with {args.frame_stack} frames")
 
     return vec_env
 
@@ -283,15 +301,25 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     from lerobot.scripts.highfive.custom_sac import HighFiveSACPolicy
     from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
 
-    # Determine number of image channels (3 for RGB, 4 for RGBD)
-    img_channels = 4 if args.use_depth else 3
     obs_size = args.observation_size
+    n_frames = args.frame_stack
+
+    # Determine number of image channels based on configuration
+    if args.bev_depth_wrist_rgb:
+        # Asymmetric: BEV depth-only (1ch), Wrist RGB (3ch)
+        bev_channels = 1 * n_frames
+        wrist_channels = 3 * n_frames
+    else:
+        # Symmetric: both cameras get same channels
+        base_channels = 4 if args.use_depth else 3
+        bev_channels = base_channels * n_frames
+        wrist_channels = base_channels * n_frames
 
     # Define features based on configuration
     input_features = {
         f"{OBS_IMAGES}.birdseye": PolicyFeature(
             type=FeatureType.VISUAL,
-            shape=(img_channels, obs_size, obs_size),
+            shape=(bev_channels, obs_size, obs_size),
         ),
         OBS_STATE: PolicyFeature(
             type=FeatureType.STATE,
@@ -303,7 +331,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     if not args.single_camera:
         input_features[f"{OBS_IMAGES}.wrist"] = PolicyFeature(
             type=FeatureType.VISUAL,
-            shape=(img_channels, obs_size, obs_size),
+            shape=(wrist_channels, obs_size, obs_size),
         )
 
     output_features = {
@@ -343,6 +371,9 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         "fusion": args.fusion,
         "use_depth": args.use_depth,
         "single_camera": args.single_camera,
+        "bev_depth_wrist_rgb": args.bev_depth_wrist_rgb,
+        "birdseye_channels": bev_channels,
+        "wrist_channels": wrist_channels,
     }
 
     policy = HighFiveSACPolicy(policy_config, encoder_config=encoder_config)
@@ -727,6 +758,8 @@ def main():
     print(f"Fusion method: {args.fusion}")
     print(f"Single camera: {args.single_camera}")
     print(f"Use depth (RGBD): {args.use_depth}")
+    print(f"BEV depth + Wrist RGB: {args.bev_depth_wrist_rgb}")
+    print(f"Frame stacking: {args.frame_stack}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")

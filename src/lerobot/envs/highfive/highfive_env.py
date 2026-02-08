@@ -117,6 +117,7 @@ class HighFiveEnv(gym.Env):
         motion_freq_scale: float = 1.0,
         use_depth: bool = False,
         single_camera: bool = False,
+        bev_depth_wrist_rgb: bool = False,
     ):
         """Initialize the High-Five environment.
 
@@ -136,6 +137,7 @@ class HighFiveEnv(gym.Env):
             motion_freq_scale: Scale factor for hand motion frequency (0.5 = half speed)
             use_depth: Add depth channel to observations (RGBD)
             single_camera: Use only birdseye camera
+            bev_depth_wrist_rgb: Asymmetric mode - BEV depth-only + Wrist RGB
         """
         super().__init__()
 
@@ -153,6 +155,7 @@ class HighFiveEnv(gym.Env):
         self.motion_freq_scale = motion_freq_scale
         self.use_depth = use_depth
         self.single_camera = single_camera
+        self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
 
         # Load MuJoCo model
         self._load_model()
@@ -269,6 +272,7 @@ class HighFiveEnv(gym.Env):
         width: int | None = None,
         height: int | None = None,
         include_depth: bool = False,
+        depth_only: bool = False,
     ) -> np.ndarray:
         """Render an image from the specified camera.
 
@@ -277,9 +281,10 @@ class HighFiveEnv(gym.Env):
             width: Image width
             height: Image height
             include_depth: If True, return RGBD (4 channels) instead of RGB (3 channels)
+            depth_only: If True, return depth only (1 channel) - for asymmetric sensor config
 
         Returns:
-            RGB image (H, W, 3) or RGBD image (H, W, 4) if include_depth=True
+            RGB image (H, W, 3), RGBD image (H, W, 4), or depth-only (H, W, 1)
         """
         if camera_name is None:
             camera_name = self.camera_name
@@ -298,6 +303,23 @@ class HighFiveEnv(gym.Env):
             self._renderers[renderer_key] = mujoco.Renderer(self._model, width=width, height=height)
 
         renderer = self._renderers[renderer_key]
+
+        if depth_only:
+            # Render depth-only image (1 channel)
+            renderer.enable_depth_rendering(True)
+            renderer.update_scene(self._data, camera=camera_id)
+            depth = renderer.render()
+            renderer.enable_depth_rendering(False)
+
+            # Normalize depth to 0-255 range
+            # Clip to reasonable range (0.1m to 2m) and normalize
+            depth = np.clip(depth, 0.1, 2.0)
+            depth_normalized = ((depth - 0.1) / 1.9 * 255).astype(np.uint8)
+
+            # Return as (H, W, 1) for consistency with other image formats
+            return depth_normalized[..., np.newaxis]
+
+        # Standard RGB rendering
         renderer.update_scene(self._data, camera=camera_id)
         image = renderer.render()
 
@@ -491,25 +513,43 @@ class HighFiveEnv(gym.Env):
 
     def _get_observation(self) -> dict[str, Any]:
         """Get current observation with configurable cameras and depth."""
-        # Get birdseye image (always included)
-        birdseye_image = self._get_camera_image(
-            camera_name="birdseye",
-            include_depth=self.use_depth,
-        )
-
-        obs = {
-            "pixels": {
-                "birdseye": birdseye_image,
-            },
-        }
-
-        # Add wrist camera if not single_camera mode
-        if not self.single_camera:
+        if self.bev_depth_wrist_rgb:
+            # Asymmetric mode: BEV depth-only, Wrist RGB
+            birdseye_image = self._get_camera_image(
+                camera_name="birdseye",
+                include_depth=False,  # We'll get depth separately
+                depth_only=True,  # Get depth-only (1 channel)
+            )
+            obs = {
+                "pixels": {
+                    "birdseye": birdseye_image,
+                },
+            }
+            # Wrist camera RGB (no depth)
             wrist_image = self._get_camera_image(
                 camera_name="wrist",
-                include_depth=self.use_depth,
+                include_depth=False,
+                depth_only=False,
             )
             obs["pixels"]["wrist"] = wrist_image
+        else:
+            # Standard mode: same channels for both cameras
+            birdseye_image = self._get_camera_image(
+                camera_name="birdseye",
+                include_depth=self.use_depth,
+            )
+            obs = {
+                "pixels": {
+                    "birdseye": birdseye_image,
+                },
+            }
+            # Add wrist camera if not single_camera mode
+            if not self.single_camera:
+                wrist_image = self._get_camera_image(
+                    camera_name="wrist",
+                    include_depth=self.use_depth,
+                )
+                obs["pixels"]["wrist"] = wrist_image
 
         if self.obs_type == "pixels_agent_pos":
             obs["agent_pos"] = self._get_joint_positions()

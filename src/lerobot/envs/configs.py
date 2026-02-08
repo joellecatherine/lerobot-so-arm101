@@ -476,6 +476,7 @@ class HighFiveEnvConfig(EnvConfig):
     motion_freq_scale: float = 1.0  # Scale for hand motion frequency (0.5 = half speed)
     use_depth: bool = False  # Add depth channel (RGBD instead of RGB)
     single_camera: bool = False  # Use only birdseye camera
+    bev_depth_wrist_rgb: bool = False  # Asymmetric: BEV depth-only + Wrist RGB
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -520,4 +521,5 @@ class HighFiveEnvConfig(EnvConfig):
             "motion_freq_scale": self.motion_freq_scale,
             "use_depth": self.use_depth,
             "single_camera": self.single_camera,
+            "bev_depth_wrist_rgb": self.bev_depth_wrist_rgb,
         }
