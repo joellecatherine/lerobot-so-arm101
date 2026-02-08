@@ -127,6 +127,34 @@ def parse_args() -> argparse.Namespace:
         default=84,
         help="Observation image size (square). 84 is standard for image-based RL.",
     )
+    parser.add_argument(
+        "--unfreeze_backbones",
+        action="store_true",
+        help="Unfreeze ResNet backbones for fine-tuning (default: frozen)",
+    )
+    parser.add_argument(
+        "--fusion",
+        type=str,
+        default="concat",
+        choices=["concat", "cross_attention"],
+        help="Sensor fusion method: concat (default) or cross_attention",
+    )
+    parser.add_argument(
+        "--use_depth",
+        action="store_true",
+        help="Add depth channel to observations (RGBD instead of RGB)",
+    )
+    parser.add_argument(
+        "--single_camera",
+        action="store_true",
+        help="Use only birdseye camera (simpler architecture)",
+    )
+    parser.add_argument(
+        "--motion_freq_scale",
+        type=float,
+        default=1.0,
+        help="Scale factor for hand motion frequency (0.5 = half speed)",
+    )
 
     # Logging and saving
     parser.add_argument(
@@ -236,6 +264,9 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         hand_motion_type=args.hand_motion_type,
         domain_randomization=args.domain_randomization,
         render_mode=render_mode,
+        motion_freq_scale=args.motion_freq_scale,
+        use_depth=args.use_depth,
+        single_camera=args.single_camera,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
@@ -252,22 +283,28 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     from lerobot.scripts.highfive.custom_sac import HighFiveSACPolicy
     from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
 
-    # Define features based on environment (dual cameras: birdseye + wrist)
+    # Determine number of image channels (3 for RGB, 4 for RGBD)
+    img_channels = 4 if args.use_depth else 3
     obs_size = args.observation_size
+
+    # Define features based on configuration
     input_features = {
         f"{OBS_IMAGES}.birdseye": PolicyFeature(
             type=FeatureType.VISUAL,
-            shape=(3, obs_size, obs_size),  # CHW format for PyTorch Conv2d
-        ),
-        f"{OBS_IMAGES}.wrist": PolicyFeature(
-            type=FeatureType.VISUAL,
-            shape=(3, obs_size, obs_size),  # CHW format for PyTorch Conv2d
+            shape=(img_channels, obs_size, obs_size),
         ),
         OBS_STATE: PolicyFeature(
             type=FeatureType.STATE,
             shape=(5,),  # 5 joint positions
         ),
     }
+
+    # Add wrist camera if not single_camera mode
+    if not args.single_camera:
+        input_features[f"{OBS_IMAGES}.wrist"] = PolicyFeature(
+            type=FeatureType.VISUAL,
+            shape=(img_channels, obs_size, obs_size),
+        )
 
     output_features = {
         ACTION: PolicyFeature(
@@ -297,12 +334,15 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         use_torch_compile=False,
     )
 
-    # Custom encoder config: separate frozen ResNet-18 per camera
+    # Custom encoder config with new options
     encoder_config = {
         "latent_dim": 256,
         "state_dim": 5,
-        "pretrained": True,       # Use ImageNet weights
-        "freeze_backbones": True,  # Freeze ResNets initially
+        "pretrained": True,
+        "freeze_backbones": not args.unfreeze_backbones,
+        "fusion": args.fusion,
+        "use_depth": args.use_depth,
+        "single_camera": args.single_camera,
     }
 
     policy = HighFiveSACPolicy(policy_config, encoder_config=encoder_config)
@@ -682,7 +722,12 @@ def main():
     print(f"Buffer capacity: {args.buffer_capacity:,}")
     print(f"Observation size: {args.observation_size}x{args.observation_size}")
     print(f"Hand motion type: {args.hand_motion_type}")
+    print(f"Motion freq scale: {args.motion_freq_scale}")
     print(f"Domain randomization: {args.domain_randomization}")
+    print(f"Fusion method: {args.fusion}")
+    print(f"Single camera: {args.single_camera}")
+    print(f"Use depth (RGBD): {args.use_depth}")
+    print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")
     print("=" * 60)

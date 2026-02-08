@@ -114,6 +114,9 @@ class HighFiveEnv(gym.Env):
         hand_motion_type: str = "sinusoidal",
         domain_randomization: bool = True,
         seed: int | None = None,
+        motion_freq_scale: float = 1.0,
+        use_depth: bool = False,
+        single_camera: bool = False,
     ):
         """Initialize the High-Five environment.
 
@@ -130,6 +133,9 @@ class HighFiveEnv(gym.Env):
             hand_motion_type: Type of hand motion ("static", "random", "sinusoidal", "tracking")
             domain_randomization: Whether to apply domain randomization
             seed: Random seed
+            motion_freq_scale: Scale factor for hand motion frequency (0.5 = half speed)
+            use_depth: Add depth channel to observations (RGBD)
+            single_camera: Use only birdseye camera
         """
         super().__init__()
 
@@ -144,6 +150,9 @@ class HighFiveEnv(gym.Env):
         self.camera_name = camera_name
         self.hand_motion_type = hand_motion_type
         self.domain_randomization = domain_randomization
+        self.motion_freq_scale = motion_freq_scale
+        self.use_depth = use_depth
+        self.single_camera = single_camera
 
         # Load MuJoCo model
         self._load_model()
@@ -153,10 +162,10 @@ class HighFiveEnv(gym.Env):
         self._episode_count = 0
         self._rng = np.random.default_rng(seed)
 
-        # Hand motion parameters
+        # Hand motion parameters (scaled by motion_freq_scale)
         self._hand_base_pos = np.array([0.15, 0.0, 0.5])
         self._hand_motion_amplitude = np.array([0.1, 0.1, 0.05])
-        self._hand_motion_freq = np.array([0.5, 0.3, 0.2])
+        self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
 
         # Viewer for human rendering
@@ -259,8 +268,19 @@ class HighFiveEnv(gym.Env):
         camera_name: str | None = None,
         width: int | None = None,
         height: int | None = None,
+        include_depth: bool = False,
     ) -> np.ndarray:
-        """Render an image from the specified camera."""
+        """Render an image from the specified camera.
+
+        Args:
+            camera_name: Name of camera to render from
+            width: Image width
+            height: Image height
+            include_depth: If True, return RGBD (4 channels) instead of RGB (3 channels)
+
+        Returns:
+            RGB image (H, W, 3) or RGBD image (H, W, 4) if include_depth=True
+        """
         if camera_name is None:
             camera_name = self.camera_name
         if width is None:
@@ -280,6 +300,21 @@ class HighFiveEnv(gym.Env):
         renderer = self._renderers[renderer_key]
         renderer.update_scene(self._data, camera=camera_id)
         image = renderer.render()
+
+        if include_depth:
+            # Render depth image
+            renderer.enable_depth_rendering(True)
+            renderer.update_scene(self._data, camera=camera_id)
+            depth = renderer.render()
+            renderer.enable_depth_rendering(False)
+
+            # Normalize depth to 0-255 range for consistency with RGB
+            # Clip to reasonable range (0.1m to 2m) and normalize
+            depth = np.clip(depth, 0.1, 2.0)
+            depth_normalized = ((depth - 0.1) / 1.9 * 255).astype(np.uint8)
+
+            # Stack RGB + Depth as 4-channel image
+            image = np.concatenate([image, depth_normalized[..., np.newaxis]], axis=-1)
 
         return image
 
@@ -450,22 +485,31 @@ class HighFiveEnv(gym.Env):
 
         # === Randomize motion parameters ===
         self._hand_motion_phase = self._rng.uniform(0, 2 * np.pi, size=3)
-        self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self._rng.uniform(
+        self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale * self._rng.uniform(
             0.8, 1.2, size=3
         )
 
     def _get_observation(self) -> dict[str, Any]:
-        """Get current observation with dual cameras."""
-        # Get images from both cameras
-        birdseye_image = self._get_camera_image(camera_name="birdseye")
-        wrist_image = self._get_camera_image(camera_name="wrist")
+        """Get current observation with configurable cameras and depth."""
+        # Get birdseye image (always included)
+        birdseye_image = self._get_camera_image(
+            camera_name="birdseye",
+            include_depth=self.use_depth,
+        )
 
         obs = {
             "pixels": {
                 "birdseye": birdseye_image,
-                "wrist": wrist_image,
             },
         }
+
+        # Add wrist camera if not single_camera mode
+        if not self.single_camera:
+            wrist_image = self._get_camera_image(
+                camera_name="wrist",
+                include_depth=self.use_depth,
+            )
+            obs["pixels"]["wrist"] = wrist_image
 
         if self.obs_type == "pixels_agent_pos":
             obs["agent_pos"] = self._get_joint_positions()

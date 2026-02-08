@@ -473,6 +473,9 @@ class HighFiveEnvConfig(EnvConfig):
     camera_name: str = "birdseye"
     hand_motion_type: str = "sinusoidal"  # "static", "random", "sinusoidal", "tracking"
     domain_randomization: bool = True
+    motion_freq_scale: float = 1.0  # Scale for hand motion frequency (0.5 = half speed)
+    use_depth: bool = False  # Add depth channel (RGBD instead of RGB)
+    single_camera: bool = False  # Use only birdseye camera
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -514,4 +517,7 @@ class HighFiveEnvConfig(EnvConfig):
             "camera_name": self.camera_name,
             "hand_motion_type": self.hand_motion_type,
             "domain_randomization": self.domain_randomization,
+            "motion_freq_scale": self.motion_freq_scale,
+            "use_depth": self.use_depth,
+            "single_camera": self.single_camera,
         }
