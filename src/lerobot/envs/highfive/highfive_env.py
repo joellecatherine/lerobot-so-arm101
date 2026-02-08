@@ -306,10 +306,10 @@ class HighFiveEnv(gym.Env):
 
         if depth_only:
             # Render depth-only image (1 channel)
-            renderer.enable_depth_rendering(True)
+            renderer.enable_depth_rendering = True
             renderer.update_scene(self._data, camera=camera_id)
             depth = renderer.render()
-            renderer.enable_depth_rendering(False)
+            renderer.enable_depth_rendering = False
 
             # Normalize depth to 0-255 range
             # Clip to reasonable range (0.1m to 2m) and normalize
@@ -325,10 +325,10 @@ class HighFiveEnv(gym.Env):
 
         if include_depth:
             # Render depth image
-            renderer.enable_depth_rendering(True)
+            renderer.enable_depth_rendering = True
             renderer.update_scene(self._data, camera=camera_id)
             depth = renderer.render()
-            renderer.enable_depth_rendering(False)
+            renderer.enable_depth_rendering = False
 
             # Normalize depth to 0-255 range for consistency with RGB
             # Clip to reasonable range (0.1m to 2m) and normalize
