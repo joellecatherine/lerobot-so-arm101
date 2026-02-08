@@ -19,30 +19,28 @@ from torchvision import models
 from torchvision.models import ResNet18_Weights
 
 
-class DepthCNN(nn.Module):
+class SmallCNN(nn.Module):
     """
-    Simple CNN for depth image encoding, trained from scratch.
+    Lightweight CNN for image encoding, trained from scratch.
 
-    Unlike ResNet with ImageNet weights, this network is designed specifically
-    for depth data. ImageNet pretraining doesn't transfer to depth because:
-    - Depth has different statistics (smooth gradients, no textures)
-    - Depth encodes geometry, not appearance
-
-    For complex 3D scenes, consider PointPillars or sparse convolutions.
-    For this simple high-five task, a lightweight CNN is sufficient.
+    Standard approach for image-based RL (DrQ, SAC-AE, CURL).
+    Much better suited for MuJoCo scenes than frozen ImageNet ResNet,
+    since MuJoCo visuals (flat colors, simple geometry) are nothing
+    like natural images.
 
     Args:
-        output_dim: Output feature dimension (default: 256)
+        in_channels: Number of input channels (1 for depth, 3 for RGB, 12 for 4-frame stack)
+        output_dim: Output feature dimension (default: 512, matches ResNet-18 output)
     """
 
-    def __init__(self, output_dim: int = 256):
+    def __init__(self, in_channels: int = 3, output_dim: int = 512):
         super().__init__()
         self.output_dim = output_dim
 
-        # Simple 4-layer CNN, trained from scratch
+        # 4-layer CNN, trained from scratch
         self.features = nn.Sequential(
-            # Layer 1: (1, 84, 84) -> (32, 40, 40)
-            nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2),
+            # Layer 1: (C, 84, 84) -> (32, 40, 40)
+            nn.Conv2d(in_channels, 32, kernel_size=5, stride=2, padding=2),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
 
@@ -86,16 +84,13 @@ class DepthCNN(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x: Tensor) -> Tensor:
-        """
-        Args:
-            x: (B, 1, H, W) depth image
-
-        Returns:
-            (B, output_dim) feature vector
-        """
         x = self.features(x)
         x = self.fc(x)
         return x
+
+
+# Backwards compatibility alias
+DepthCNN = SmallCNN
 
 # Keys used by LeRobot
 OBS_IMAGES = "observation.images"
@@ -187,6 +182,7 @@ class FlexibleCameraEncoder(nn.Module):
         use_depth: Whether input has depth channel (4 channels vs 3)
         single_camera: Use only birdseye camera
         bev_depth_wrist_rgb: Asymmetric mode - BEV depth-only (1ch) + Wrist RGB (3ch)
+        encoder_type: "resnet" (default) or "small_cnn" (lightweight, trained from scratch)
     """
 
     def __init__(
@@ -201,6 +197,7 @@ class FlexibleCameraEncoder(nn.Module):
         bev_depth_wrist_rgb: bool = False,
         birdseye_channels: int | None = None,
         wrist_channels: int | None = None,
+        encoder_type: str = "resnet",
     ):
         super().__init__()
         self.latent_dim = latent_dim
@@ -210,6 +207,7 @@ class FlexibleCameraEncoder(nn.Module):
         self.use_depth = use_depth
         self.single_camera = single_camera
         self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
+        self.encoder_type = encoder_type
 
         # Determine input channels for each camera
         # If explicit channels provided (e.g., from frame stacking), use those
@@ -226,27 +224,35 @@ class FlexibleCameraEncoder(nn.Module):
             self._wrist_channels = 4 if use_depth else 3
 
         # Create encoder backbones
-        weights = ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+        # SmallCNN output dim matches ResNet-18 (512) so projection layers work for both
+        backbone_out = 512
 
-        if bev_depth_wrist_rgb:
-            # Use dedicated DepthCNN for BEV depth (no pretrained weights - trained from scratch)
-            # This is more principled than using ImageNet-pretrained ResNet on depth
-            self.encoder_birdseye = DepthCNN(output_dim=512)  # Match ResNet output dim
+        if encoder_type == "small_cnn":
+            # Lightweight CNN trained from scratch — better for MuJoCo scenes
+            self.encoder_birdseye = SmallCNN(in_channels=self._birdseye_channels, output_dim=backbone_out)
+            self._use_depth_cnn = False
+            if not single_camera:
+                self.encoder_wrist = SmallCNN(in_channels=self._wrist_channels, output_dim=backbone_out)
+            # SmallCNN is always trainable, freeze_backbones is ignored
+        elif bev_depth_wrist_rgb:
+            # Use dedicated SmallCNN for BEV depth (no pretrained weights)
+            self.encoder_birdseye = SmallCNN(in_channels=self._birdseye_channels, output_dim=backbone_out)
             self._use_depth_cnn = True
+            if not single_camera:
+                weights = ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
+                self.encoder_wrist = self._make_resnet_backbone(weights, self._wrist_channels)
+                if freeze_backbones:
+                    self._freeze(self.encoder_wrist)
         else:
+            weights = ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
             self.encoder_birdseye = self._make_resnet_backbone(weights, self._birdseye_channels)
             self._use_depth_cnn = False
-
-        if not single_camera:
-            # Wrist always uses ResNet (RGB benefits from ImageNet pretraining)
-            self.encoder_wrist = self._make_resnet_backbone(weights, self._wrist_channels)
-
-        if freeze_backbones:
-            # Don't freeze DepthCNN - it has no pretrained weights and must train from scratch
-            if not self._use_depth_cnn:
-                self._freeze(self.encoder_birdseye)
             if not single_camera:
-                self._freeze(self.encoder_wrist)
+                self.encoder_wrist = self._make_resnet_backbone(weights, self._wrist_channels)
+            if freeze_backbones:
+                self._freeze(self.encoder_birdseye)
+                if not single_camera:
+                    self._freeze(self.encoder_wrist)
 
         # ResNet-18 outputs 512-dim after avgpool
         resnet_out = 512
@@ -395,6 +401,7 @@ class SACEncoderAdapter(nn.Module):
         bev_depth_wrist_rgb: bool = False,
         birdseye_channels: int | None = None,
         wrist_channels: int | None = None,
+        encoder_type: str = "resnet",
     ):
         super().__init__()
         self.single_camera = single_camera
@@ -411,6 +418,7 @@ class SACEncoderAdapter(nn.Module):
             bev_depth_wrist_rgb=bev_depth_wrist_rgb,
             birdseye_channels=birdseye_channels,
             wrist_channels=wrist_channels,
+            encoder_type=encoder_type,
         )
         self._output_dim = self.encoder.output_dim
 

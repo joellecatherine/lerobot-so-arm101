@@ -167,6 +167,13 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of frames to stack for temporal context (1=no stacking, 4=common choice)",
     )
+    parser.add_argument(
+        "--encoder_type",
+        type=str,
+        default="resnet",
+        choices=["resnet", "small_cnn"],
+        help="Vision encoder: resnet (ImageNet pretrained) or small_cnn (trained from scratch)",
+    )
 
     # Logging and saving
     parser.add_argument(
@@ -384,6 +391,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         "bev_depth_wrist_rgb": args.bev_depth_wrist_rgb,
         "birdseye_channels": bev_channels,
         "wrist_channels": wrist_channels,
+        "encoder_type": args.encoder_type,
     }
 
     policy = HighFiveSACPolicy(policy_config, encoder_config=encoder_config)
@@ -791,6 +799,7 @@ def main():
     print(f"Use depth (RGBD): {args.use_depth}")
     print(f"BEV depth + Wrist RGB: {args.bev_depth_wrist_rgb}")
     print(f"Frame stacking: {args.frame_stack}")
+    print(f"Encoder type: {args.encoder_type}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")
