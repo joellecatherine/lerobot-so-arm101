@@ -236,17 +236,37 @@ class HighFiveEnv(gym.Env):
 
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
-        image_space = spaces.Box(
+        # Determine channels for each camera based on configuration
+        if self.bev_depth_wrist_rgb:
+            # Asymmetric: BEV depth-only (1 channel), Wrist RGB (3 channels)
+            birdseye_channels = 1
+            wrist_channels = 3
+        elif self.use_depth:
+            # RGBD mode: 4 channels for both
+            birdseye_channels = 4
+            wrist_channels = 4
+        else:
+            # Standard RGB: 3 channels for both
+            birdseye_channels = 3
+            wrist_channels = 3
+
+        birdseye_space = spaces.Box(
             low=0,
             high=255,
-            shape=(self.observation_height, self.observation_width, 3),
+            shape=(self.observation_height, self.observation_width, birdseye_channels),
+            dtype=np.uint8,
+        )
+        wrist_space = spaces.Box(
+            low=0,
+            high=255,
+            shape=(self.observation_height, self.observation_width, wrist_channels),
             dtype=np.uint8,
         )
 
         # Dual camera observation space (birdseye + wrist)
         pixels_dict = {
-            "birdseye": image_space,
-            "wrist": image_space,
+            "birdseye": birdseye_space,
+            "wrist": wrist_space,
         }
 
         if self.obs_type == "pixels":
