@@ -33,31 +33,15 @@ class HighFiveSACPolicy(SACPolicy):
         """Override to use our dual-camera encoder."""
         self.shared_encoder = self.config.shared_encoder
 
-        # Get encoder settings
-        latent_dim = self.encoder_config.get("latent_dim", 256)
-        state_dim = self.encoder_config.get("state_dim", 5)
-        pretrained = self.encoder_config.get("pretrained", True)
-        freeze_backbones = self.encoder_config.get("freeze_backbones", True)
-
         # Create our custom encoder (used by both actor and critic)
-        self.encoder_critic = SACEncoderAdapter(
-            latent_dim=latent_dim,
-            state_dim=state_dim,
-            pretrained=pretrained,
-            freeze_backbones=freeze_backbones,
-        )
+        self.encoder_critic = SACEncoderAdapter(**self.encoder_config)
 
         # For shared_encoder=True, actor uses same encoder as critic
         # For shared_encoder=False, actor gets its own encoder
         if self.shared_encoder:
             self.encoder_actor = self.encoder_critic
         else:
-            self.encoder_actor = SACEncoderAdapter(
-                latent_dim=latent_dim,
-                state_dim=state_dim,
-                pretrained=pretrained,
-                freeze_backbones=freeze_backbones,
-            )
+            self.encoder_actor = SACEncoderAdapter(**self.encoder_config)
 
     def unfreeze_backbones(self):
         """Unfreeze ResNet backbones for fine-tuning."""
