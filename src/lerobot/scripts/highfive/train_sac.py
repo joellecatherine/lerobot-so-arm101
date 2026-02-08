@@ -39,6 +39,7 @@ Apple Silicon Notes:
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import sys
 from datetime import datetime
@@ -256,6 +257,15 @@ def setup_logging(args: argparse.Namespace) -> Path:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "checkpoints").mkdir(exist_ok=True)
+
+    # Save full config as JSON for reproducibility
+    config_path = output_dir / "config.json"
+    config_dict = vars(args).copy()
+    config_dict["timestamp"] = datetime.now().isoformat()
+    config_dict["command"] = " ".join(sys.argv)
+    with open(config_path, "w") as f:
+        json.dump(config_dict, f, indent=2, default=str)
+    print(f"Config saved to {config_path}")
 
     return output_dir
 
@@ -547,8 +557,14 @@ def train(args: argparse.Namespace):
         state_keys=state_keys,
     )
 
-    # Create optimizer
-    optimizer = optim.Adam(policy.parameters(), lr=args.learning_rate)
+    # Create separate optimizers for actor, critic, and temperature (required by SAC)
+    # get_optim_params() filters shared encoder params out of the actor optimizer
+    optim_params = policy.get_optim_params()
+    optimizers = {
+        "critic": optim.Adam(optim_params["critic"], lr=args.learning_rate),
+        "actor": optim.Adam(optim_params["actor"], lr=args.learning_rate),
+        "temperature": optim.Adam([optim_params["temperature"]], lr=args.learning_rate),
+    }
 
     # Training state
     global_step = resume_step
@@ -629,39 +645,54 @@ def train(args: argparse.Namespace):
             critic_loss_dict = policy.forward(batch, model="critic")
             critic_loss = critic_loss_dict["loss_critic"]
 
-            optimizer.zero_grad()
+            optimizers["critic"].zero_grad()
             critic_loss.backward()
-            optimizer.step()
+            optimizers["critic"].step()
 
             # Update target networks
             policy.update_target_networks()
 
-            # Train actor (less frequently than critic for stability)
+            # Train actor and temperature (less frequently than critic)
             actor_loss = None
-            if global_step % 2 == 0:  # Update actor every 2 critic updates
+            temperature_loss = None
+            if global_step % 2 == 0:
+                # Actor optimization
                 actor_loss_dict = policy.forward(batch, model="actor")
                 actor_loss = actor_loss_dict["loss_actor"]
 
-                optimizer.zero_grad()
+                optimizers["actor"].zero_grad()
                 actor_loss.backward()
-                optimizer.step()
+                optimizers["actor"].step()
+
+                # Temperature optimization
+                temp_loss_dict = policy.forward(batch, model="temperature")
+                temperature_loss = temp_loss_dict["loss_temperature"]
+
+                optimizers["temperature"].zero_grad()
+                temperature_loss.backward()
+                optimizers["temperature"].step()
+
+                policy.update_temperature()
 
             # Logging
             if global_step % args.log_freq == 0:
                 log_dict = {
                     "train/critic_loss": critic_loss.item(),
+                    "train/temperature": policy.temperature,
                     "train/step": global_step,
                     "train/buffer_size": len(replay_buffer),
                 }
                 if actor_loss is not None:
                     log_dict["train/actor_loss"] = actor_loss.item()
+                if temperature_loss is not None:
+                    log_dict["train/temperature_loss"] = temperature_loss.item()
 
                 if wandb_run:
                     wandb_run.log(log_dict, step=global_step)
 
                 print(
-                    f"Step {global_step:>7d} | Critic Loss: {critic_loss.item():.4f} | "
-                    f"Buffer: {len(replay_buffer):>6d}"
+                    f"Step {global_step:>7d} | Critic: {critic_loss.item():.4f} | "
+                    f"Temp: {policy.temperature:.4f} | Buffer: {len(replay_buffer):>6d}"
                 )
 
         # Episode end
