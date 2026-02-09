@@ -166,8 +166,8 @@ class HighFiveEnv(gym.Env):
         self._rng = np.random.default_rng(seed)
 
         # Hand motion parameters (scaled by motion_freq_scale)
-        self._hand_base_pos = np.array([0.15, 0.0, 0.5])
-        self._hand_motion_amplitude = np.array([0.1, 0.1, 0.05])
+        self._hand_base_pos = np.array([0.0, 0.0, 0.45])
+        self._hand_motion_amplitude = np.array([0.05, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
 
