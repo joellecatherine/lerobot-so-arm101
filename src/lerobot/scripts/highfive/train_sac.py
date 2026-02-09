@@ -331,16 +331,16 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     use_state_only = args.obs_type == "state"
 
     if use_state_only:
-        # State-only: 8-dim state vector (5 joints + 3 hand pos), no images
+        # State-only: 11-dim state vector (5 joints + 3 ee pos + 3 hand pos), no images
         input_features = {
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(8,),
+                shape=(11,),
             ),
         }
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 8,
+            "state_dim": 11,
             "encoder_type": "state",
             "single_camera": True,
         }

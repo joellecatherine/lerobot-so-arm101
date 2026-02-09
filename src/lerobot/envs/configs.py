@@ -506,10 +506,10 @@ class HighFiveEnvConfig(EnvConfig):
                 shape=(self.observation_height, self.observation_width, 3),
             )
         elif self.obs_type == "state":
-            # State-only: joint positions (5) + hand position (3)
+            # State-only: joint positions (5) + ee position (3) + hand position (3)
             self.features["state"] = PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(8,),
+                shape=(11,),
             )
         else:
             raise ValueError(f"Unsupported obs_type: {self.obs_type}")
