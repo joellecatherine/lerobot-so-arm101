@@ -166,7 +166,10 @@ class HighFiveEnv(gym.Env):
         self._rng = np.random.default_rng(seed)
 
         # Hand motion parameters (scaled by motion_freq_scale)
-        self._hand_base_pos = np.array([0.0, 0.0, 0.45])
+        # Arm EE is constrained to x≈-0.159. hand_contact site is offset
+        # (-0.03, 0, +0.02) from body pos due to 90° Z rotation.
+        # So body_x = -0.159 + 0.03 = -0.129 aligns contact with EE.
+        self._hand_base_pos = np.array([-0.129, 0.0, 0.45])
         self._hand_motion_amplitude = np.array([0.05, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
@@ -484,14 +487,13 @@ class HighFiveEnv(gym.Env):
                 self._model.geom_size[geom_id] = self._original_hand_sizes[geom_id] * hand_scale
 
         # === Hand base position randomization ===
-        # Robot is at [-0.15, 0, 0.31] with ~30cm reach
-        # Hand must stay within reachable workspace
-        # Default position moved closer: [0.0, 0, 0.45] (~22cm from robot base)
-        # Randomization constrained to keep hand reachable
-        base_hand_pos = np.array([0.0, 0.0, 0.45])
+        # hand_contact site offset: (-0.03, 0, +0.02) from body pos (90° Z rotation).
+        # With shoulder_pan working, EE x-range is ~[-0.25, +0.05].
+        # body_x = -0.129 → contact at x ≈ -0.159 (center of EE x-range).
+        base_hand_pos = np.array([-0.129, 0.0, 0.45])
         offset = self._rng.uniform(
-            [-0.08, -0.08, -0.05],  # Can move toward robot, sideways, down
-            [0.10, 0.08, 0.08]      # Limited movement away from robot
+            [-0.08, -0.08, -0.05],
+            [0.08, 0.08, 0.08]
         )
         self._hand_base_pos = base_hand_pos + offset
 
