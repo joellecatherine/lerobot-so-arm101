@@ -181,6 +181,12 @@ def parse_args() -> argparse.Namespace:
         choices=["pixels_agent_pos", "state"],
         help="Observation type: pixels_agent_pos (vision+joints) or state (joints+hand pos, no cameras)",
     )
+    parser.add_argument(
+        "--utd_ratio",
+        type=int,
+        default=1,
+        help="Update-to-data ratio: gradient updates per env step (1 for pixels, 10-20 for state)",
+    )
 
     # Logging and saving
     parser.add_argument(
@@ -677,45 +683,46 @@ def train(args: argparse.Namespace):
             truncated=bool(truncated.any()),
         )
 
-        # Train policy
+        # Train policy (multiple updates per env step when utd_ratio > 1)
         if global_step >= args.warmup_steps and len(replay_buffer) >= args.batch_size:
-            batch = replay_buffer.sample(args.batch_size)
+            for _utd in range(args.utd_ratio):
+                batch = replay_buffer.sample(args.batch_size)
 
-            # Train critic
-            critic_loss_dict = policy.forward(batch, model="critic")
-            critic_loss = critic_loss_dict["loss_critic"]
+                # Train critic
+                critic_loss_dict = policy.forward(batch, model="critic")
+                critic_loss = critic_loss_dict["loss_critic"]
 
-            optimizers["critic"].zero_grad()
-            critic_loss.backward()
-            torch.nn.utils.clip_grad_norm_(policy.critic_ensemble.parameters(), max_norm=1.0)
-            optimizers["critic"].step()
+                optimizers["critic"].zero_grad()
+                critic_loss.backward()
+                torch.nn.utils.clip_grad_norm_(policy.critic_ensemble.parameters(), max_norm=1.0)
+                optimizers["critic"].step()
 
-            # Update target networks
-            policy.update_target_networks()
+                # Update target networks
+                policy.update_target_networks()
 
-            # Train actor and temperature (less frequently than critic)
-            actor_loss = None
-            temperature_loss = None
-            if global_step % 2 == 0:
-                # Actor optimization
-                actor_loss_dict = policy.forward(batch, model="actor")
-                actor_loss = actor_loss_dict["loss_actor"]
+                # Train actor and temperature (every other update)
+                actor_loss = None
+                temperature_loss = None
+                if _utd % 2 == 0:
+                    # Actor optimization
+                    actor_loss_dict = policy.forward(batch, model="actor")
+                    actor_loss = actor_loss_dict["loss_actor"]
 
-                optimizers["actor"].zero_grad()
-                actor_loss.backward()
-                torch.nn.utils.clip_grad_norm_(optim_params["actor"], max_norm=1.0)
-                optimizers["actor"].step()
+                    optimizers["actor"].zero_grad()
+                    actor_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(optim_params["actor"], max_norm=1.0)
+                    optimizers["actor"].step()
 
-                # Temperature optimization
-                temp_loss_dict = policy.forward(batch, model="temperature")
-                temperature_loss = temp_loss_dict["loss_temperature"]
+                    # Temperature optimization
+                    temp_loss_dict = policy.forward(batch, model="temperature")
+                    temperature_loss = temp_loss_dict["loss_temperature"]
 
-                optimizers["temperature"].zero_grad()
-                temperature_loss.backward()
-                torch.nn.utils.clip_grad_norm_([policy.log_alpha], max_norm=1.0)
-                optimizers["temperature"].step()
+                    optimizers["temperature"].zero_grad()
+                    temperature_loss.backward()
+                    torch.nn.utils.clip_grad_norm_([policy.log_alpha], max_norm=1.0)
+                    optimizers["temperature"].step()
 
-                policy.update_temperature()
+                    policy.update_temperature()
 
             # Logging
             if global_step % args.log_freq == 0:
@@ -835,6 +842,7 @@ def main():
     print(f"BEV depth + Wrist RGB: {args.bev_depth_wrist_rgb}")
     print(f"Frame stacking: {args.frame_stack}")
     print(f"Observation type: {args.obs_type}")
+    print(f"UTD ratio: {args.utd_ratio}")
     print(f"Encoder type: {args.encoder_type}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
