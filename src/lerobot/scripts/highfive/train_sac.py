@@ -655,6 +655,7 @@ def train(args: argparse.Namespace):
 
             optimizers["critic"].zero_grad()
             critic_loss.backward()
+            torch.nn.utils.clip_grad_norm_(policy.critic_ensemble.parameters(), max_norm=1.0)
             optimizers["critic"].step()
 
             # Update target networks
@@ -670,6 +671,7 @@ def train(args: argparse.Namespace):
 
                 optimizers["actor"].zero_grad()
                 actor_loss.backward()
+                torch.nn.utils.clip_grad_norm_(optim_params["actor"], max_norm=1.0)
                 optimizers["actor"].step()
 
                 # Temperature optimization
@@ -678,6 +680,7 @@ def train(args: argparse.Namespace):
 
                 optimizers["temperature"].zero_grad()
                 temperature_loss.backward()
+                torch.nn.utils.clip_grad_norm_([policy.log_alpha], max_norm=1.0)
                 optimizers["temperature"].step()
 
                 policy.update_temperature()
