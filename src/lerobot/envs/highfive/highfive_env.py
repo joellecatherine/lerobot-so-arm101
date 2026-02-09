@@ -675,9 +675,7 @@ class HighFiveEnv(gym.Env):
 
         # Compute reward
         distance = self._compute_distance()
-        # Exponential reward: strong gradient near target, weak when far
-        # exp(-10 * 0.30) ≈ 0.05 (far), exp(-10 * 0.05) ≈ 0.61 (close), exp(0) = 1.0
-        reward = np.exp(-10.0 * distance)
+        reward = -10.0 * distance
 
         # Check for contact (success)
         is_contact = self._check_contact()
