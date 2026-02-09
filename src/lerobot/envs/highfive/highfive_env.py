@@ -236,6 +236,18 @@ class HighFiveEnv(gym.Env):
 
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
+        if self.obs_type == "state":
+            # State-only: joint positions (5) + hand position (3) = 8 dims
+            self.observation_space = spaces.Dict({
+                "state": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(8,),
+                    dtype=np.float64,
+                ),
+            })
+            return
+
         # Determine channels for each camera based on configuration
         if self.bev_depth_wrist_rgb:
             # Asymmetric: BEV depth-only (1 channel), Wrist RGB (3 channels)
@@ -533,6 +545,12 @@ class HighFiveEnv(gym.Env):
 
     def _get_observation(self) -> dict[str, Any]:
         """Get current observation with configurable cameras and depth."""
+        if self.obs_type == "state":
+            # State-only: joint positions (5) + hand position (3)
+            joint_pos = self._get_joint_positions()
+            hand_pos = self._get_hand_position()
+            return {"state": np.concatenate([joint_pos, hand_pos])}
+
         if self.bev_depth_wrist_rgb:
             # Asymmetric mode: BEV depth-only, Wrist RGB
             birdseye_image = self._get_camera_image(

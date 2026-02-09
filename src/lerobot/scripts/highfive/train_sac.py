@@ -174,6 +174,13 @@ def parse_args() -> argparse.Namespace:
         choices=["resnet", "small_cnn"],
         help="Vision encoder: resnet (ImageNet pretrained) or small_cnn (trained from scratch)",
     )
+    parser.add_argument(
+        "--obs_type",
+        type=str,
+        default="pixels_agent_pos",
+        choices=["pixels_agent_pos", "state"],
+        help="Observation type: pixels_agent_pos (vision+joints) or state (joints+hand pos, no cameras)",
+    )
 
     # Logging and saving
     parser.add_argument(
@@ -284,9 +291,12 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
 
     render_mode = "human" if args.render else "rgb_array"
 
+    # State mode doesn't need cameras
+    single_camera = args.single_camera or args.obs_type == "state"
+
     env_config = HighFiveEnvConfig(
         episode_length=args.episode_length,
-        obs_type="pixels_agent_pos",
+        obs_type=args.obs_type,
         observation_width=args.observation_size,
         observation_height=args.observation_size,
         hand_motion_type=args.hand_motion_type,
@@ -294,7 +304,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         render_mode=render_mode,
         motion_freq_scale=args.motion_freq_scale,
         use_depth=args.use_depth,
-        single_camera=args.single_camera,
+        single_camera=single_camera,
         bev_depth_wrist_rgb=args.bev_depth_wrist_rgb,
     )
 
@@ -318,38 +328,65 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     from lerobot.scripts.highfive.custom_sac import HighFiveSACPolicy
     from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
 
-    obs_size = args.observation_size
-    n_frames = args.frame_stack
+    use_state_only = args.obs_type == "state"
 
-    # Determine number of image channels based on configuration
-    if args.bev_depth_wrist_rgb:
-        # Asymmetric: BEV depth-only (1ch), Wrist RGB (3ch)
-        bev_channels = 1 * n_frames
-        wrist_channels = 3 * n_frames
+    if use_state_only:
+        # State-only: 8-dim state vector (5 joints + 3 hand pos), no images
+        input_features = {
+            OBS_STATE: PolicyFeature(
+                type=FeatureType.STATE,
+                shape=(8,),
+            ),
+        }
+        encoder_config = {
+            "latent_dim": 256,
+            "state_dim": 8,
+            "encoder_type": "state",
+            "single_camera": True,
+        }
     else:
-        # Symmetric: both cameras get same channels
-        base_channels = 4 if args.use_depth else 3
-        bev_channels = base_channels * n_frames
-        wrist_channels = base_channels * n_frames
+        obs_size = args.observation_size
+        n_frames = args.frame_stack
 
-    # Define features based on configuration
-    input_features = {
-        f"{OBS_IMAGES}.birdseye": PolicyFeature(
-            type=FeatureType.VISUAL,
-            shape=(bev_channels, obs_size, obs_size),
-        ),
-        OBS_STATE: PolicyFeature(
-            type=FeatureType.STATE,
-            shape=(5,),  # 5 joint positions
-        ),
-    }
+        # Determine number of image channels based on configuration
+        if args.bev_depth_wrist_rgb:
+            bev_channels = 1 * n_frames
+            wrist_channels = 3 * n_frames
+        else:
+            base_channels = 4 if args.use_depth else 3
+            bev_channels = base_channels * n_frames
+            wrist_channels = base_channels * n_frames
 
-    # Add wrist camera if not single_camera mode
-    if not args.single_camera:
-        input_features[f"{OBS_IMAGES}.wrist"] = PolicyFeature(
-            type=FeatureType.VISUAL,
-            shape=(wrist_channels, obs_size, obs_size),
-        )
+        input_features = {
+            f"{OBS_IMAGES}.birdseye": PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(bev_channels, obs_size, obs_size),
+            ),
+            OBS_STATE: PolicyFeature(
+                type=FeatureType.STATE,
+                shape=(5,),
+            ),
+        }
+
+        if not args.single_camera:
+            input_features[f"{OBS_IMAGES}.wrist"] = PolicyFeature(
+                type=FeatureType.VISUAL,
+                shape=(wrist_channels, obs_size, obs_size),
+            )
+
+        encoder_config = {
+            "latent_dim": 256,
+            "state_dim": 5,
+            "pretrained": True,
+            "freeze_backbones": not args.unfreeze_backbones,
+            "fusion": args.fusion,
+            "use_depth": args.use_depth,
+            "single_camera": args.single_camera,
+            "bev_depth_wrist_rgb": args.bev_depth_wrist_rgb,
+            "birdseye_channels": bev_channels,
+            "wrist_channels": wrist_channels,
+            "encoder_type": args.encoder_type,
+        }
 
     output_features = {
         ACTION: PolicyFeature(
@@ -379,21 +416,6 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         use_torch_compile=False,
     )
 
-    # Custom encoder config with new options
-    encoder_config = {
-        "latent_dim": 256,
-        "state_dim": 5,
-        "pretrained": True,
-        "freeze_backbones": not args.unfreeze_backbones,
-        "fusion": args.fusion,
-        "use_depth": args.use_depth,
-        "single_camera": args.single_camera,
-        "bev_depth_wrist_rgb": args.bev_depth_wrist_rgb,
-        "birdseye_channels": bev_channels,
-        "wrist_channels": wrist_channels,
-        "encoder_type": args.encoder_type,
-    }
-
     policy = HighFiveSACPolicy(policy_config, encoder_config=encoder_config)
     policy.to(args.device)
 
@@ -404,10 +426,20 @@ def preprocess_observation(
     obs: dict[str, Any],
     device: str,
 ) -> dict[str, torch.Tensor]:
-    """Preprocess environment observation for policy input (dual cameras)."""
+    """Preprocess environment observation for policy input."""
     from lerobot.utils.constants import OBS_IMAGES, OBS_STATE
 
     processed = {}
+
+    # State-only mode: joint positions + hand position
+    if "state" in obs:
+        state = obs["state"]
+        if isinstance(state, np.ndarray):
+            state = torch.from_numpy(state).float()
+            if state.dim() == 1:
+                state = state.unsqueeze(0)
+        processed[OBS_STATE] = state.to(device)
+        return processed
 
     # Process dual camera observations (birdseye + wrist)
     if "pixels" in obs:
@@ -802,6 +834,7 @@ def main():
     print(f"Use depth (RGBD): {args.use_depth}")
     print(f"BEV depth + Wrist RGB: {args.bev_depth_wrist_rgb}")
     print(f"Frame stacking: {args.frame_stack}")
+    print(f"Observation type: {args.obs_type}")
     print(f"Encoder type: {args.encoder_type}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:

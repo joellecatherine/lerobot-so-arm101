@@ -92,6 +92,32 @@ class SmallCNN(nn.Module):
 # Backwards compatibility alias
 DepthCNN = SmallCNN
 
+
+class StateEncoder(nn.Module):
+    """Simple MLP encoder for state-only observations (no images).
+
+    Takes raw state vector (joint positions + hand position) and produces
+    a latent feature vector. Used to verify the environment is solvable
+    without vision.
+
+    Args:
+        state_dim: Input state dimension (default: 8 = 5 joints + 3 hand pos)
+        output_dim: Output feature dimension (default: 256)
+    """
+
+    def __init__(self, state_dim: int = 8, output_dim: int = 256):
+        super().__init__()
+        self.output_dim = output_dim
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, state: Tensor) -> Tensor:
+        return self.net(state)
+
 # Keys used by LeRobot
 OBS_IMAGES = "observation.images"
 OBS_STATE = "observation.state"
@@ -386,7 +412,8 @@ class FlexibleCameraEncoder(nn.Module):
 
 class SACEncoderAdapter(nn.Module):
     """
-    Adapter that wraps FlexibleCameraEncoder to match SAC's encoder interface.
+    Adapter that wraps FlexibleCameraEncoder (or StateEncoder) to match
+    SAC's encoder interface.
     """
 
     def __init__(
@@ -406,31 +433,39 @@ class SACEncoderAdapter(nn.Module):
         super().__init__()
         self.single_camera = single_camera
         self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
+        self._encoder_type = encoder_type
 
-        self.encoder = FlexibleCameraEncoder(
-            latent_dim=latent_dim,
-            state_dim=state_dim,
-            pretrained=pretrained,
-            freeze_backbones=freeze_backbones,
-            fusion=fusion,
-            use_depth=use_depth,
-            single_camera=single_camera,
-            bev_depth_wrist_rgb=bev_depth_wrist_rgb,
-            birdseye_channels=birdseye_channels,
-            wrist_channels=wrist_channels,
-            encoder_type=encoder_type,
-        )
-        self._output_dim = self.encoder.output_dim
-
-        # For SAC compatibility
-        self.has_images = True
-        self.has_state = True
-        self.has_env = False
-
-        if single_camera:
-            self.image_keys = [f"{OBS_IMAGES}.birdseye"]
+        if encoder_type == "state":
+            # State-only encoder: no images, just MLP on state vector
+            self.encoder = StateEncoder(state_dim=state_dim, output_dim=latent_dim)
+            self._output_dim = latent_dim
+            self.has_images = False
+            self.has_state = True
+            self.has_env = False
+            self.image_keys = []
         else:
-            self.image_keys = [f"{OBS_IMAGES}.birdseye", f"{OBS_IMAGES}.wrist"]
+            self.encoder = FlexibleCameraEncoder(
+                latent_dim=latent_dim,
+                state_dim=state_dim,
+                pretrained=pretrained,
+                freeze_backbones=freeze_backbones,
+                fusion=fusion,
+                use_depth=use_depth,
+                single_camera=single_camera,
+                bev_depth_wrist_rgb=bev_depth_wrist_rgb,
+                birdseye_channels=birdseye_channels,
+                wrist_channels=wrist_channels,
+                encoder_type=encoder_type,
+            )
+            self._output_dim = self.encoder.output_dim
+            self.has_images = True
+            self.has_state = True
+            self.has_env = False
+
+            if single_camera:
+                self.image_keys = [f"{OBS_IMAGES}.birdseye"]
+            else:
+                self.image_keys = [f"{OBS_IMAGES}.birdseye", f"{OBS_IMAGES}.wrist"]
 
     @property
     def output_dim(self) -> int:
@@ -445,11 +480,13 @@ class SACEncoderAdapter(nn.Module):
         """
         Forward pass matching SAC's SACObservationEncoder interface.
         """
-        birdseye = obs[f"{OBS_IMAGES}.birdseye"]
-        wrist = None if self.single_camera else obs[f"{OBS_IMAGES}.wrist"]
-        state = obs[OBS_STATE]
-
-        features = self.encoder(birdseye, wrist, state)
+        if self._encoder_type == "state":
+            features = self.encoder(obs[OBS_STATE])
+        else:
+            birdseye = obs[f"{OBS_IMAGES}.birdseye"]
+            wrist = None if self.single_camera else obs[f"{OBS_IMAGES}.wrist"]
+            state = obs[OBS_STATE]
+            features = self.encoder(birdseye, wrist, state)
 
         if detach:
             features = features.detach()
@@ -462,7 +499,8 @@ class SACEncoderAdapter(nn.Module):
 
     def unfreeze_backbones(self):
         """Unfreeze ResNet backbones for fine-tuning."""
-        self.encoder.unfreeze_backbones()
+        if self._encoder_type != "state":
+            self.encoder.unfreeze_backbones()
 
 
 # Keep old class name for backwards compatibility
