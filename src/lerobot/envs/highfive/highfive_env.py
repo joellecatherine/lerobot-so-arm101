@@ -425,6 +425,25 @@ class HighFiveEnv(gym.Env):
             )
             target_pos = self._hand_base_pos + offset
 
+        elif self.hand_motion_type == "random_walk":
+            # Smooth random walk — never repeats, can't be intercepted by waiting
+            if not hasattr(self, '_hand_walk_pos'):
+                self._hand_walk_pos = self._hand_base_pos.copy()
+            # Random velocity, scaled by motion_freq_scale
+            step_size = 0.003 * self.motion_freq_scale
+            self._hand_walk_pos += self._rng.normal(0, step_size, size=3)
+            # Clamp to absolute workspace bounds (verified reachable from diagnostic).
+            # EE range: x[-0.25,+0.27], y[-0.25,+0.14], z[0.14,0.68]
+            # Contact site offset from body pos: (-0.03, 0, +0.02)
+            # So body pos bounds = EE bounds adjusted by inverse offset:
+            #   body_x: [-0.25+0.03, +0.27+0.03] = [-0.22, +0.30] → use [-0.20, +0.20] (safe margin)
+            #   body_y: [-0.25, +0.14] → use [-0.10, +0.10]
+            #   body_z: [0.14-0.02, 0.68-0.02] = [0.12, 0.66] → use [0.35, 0.55]
+            self._hand_walk_pos[0] = np.clip(self._hand_walk_pos[0], -0.20, 0.0)
+            self._hand_walk_pos[1] = np.clip(self._hand_walk_pos[1], -0.10, 0.10)
+            self._hand_walk_pos[2] = np.clip(self._hand_walk_pos[2], 0.35, 0.55)
+            target_pos = self._hand_walk_pos.copy()
+
         elif self.hand_motion_type == "tracking":
             # Move toward/away from robot (for difficulty scaling)
             ee_pos = self._get_ee_position()
@@ -646,6 +665,10 @@ class HighFiveEnv(gym.Env):
         # Reset step counter
         self._step_count = 0
         self._episode_count += 1
+
+        # Reset random walk position
+        if hasattr(self, '_hand_walk_pos'):
+            del self._hand_walk_pos
 
         observation = self._get_observation()
         info = {

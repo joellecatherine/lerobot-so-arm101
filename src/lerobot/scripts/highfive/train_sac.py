@@ -113,7 +113,7 @@ def parse_args() -> argparse.Namespace:
         "--hand_motion_type",
         type=str,
         default="sinusoidal",
-        choices=["static", "random", "sinusoidal", "tracking"],
+        choices=["static", "random", "sinusoidal", "random_walk", "tracking"],
         help="Type of hand target motion",
     )
     parser.add_argument(
