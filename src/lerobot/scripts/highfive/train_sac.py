@@ -112,7 +112,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hand_motion_type",
         type=str,
-        default="sinusoidal",
+        default="random_walk",
         choices=["static", "random", "sinusoidal", "random_walk", "tracking"],
         help="Type of hand target motion",
     )
@@ -153,8 +153,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--motion_freq_scale",
         type=float,
-        default=1.0,
+        default=0.3,
         help="Scale factor for hand motion frequency (0.5 = half speed)",
+    )
+    parser.add_argument(
+        "--start_pose",
+        type=str,
+        default="folded",
+        choices=["folded", "neutral"],
+        help="Starting pose for robot arm",
     )
     parser.add_argument(
         "--bev_depth_wrist_rgb",
@@ -170,7 +177,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--encoder_type",
         type=str,
-        default="resnet",
+        default="small_cnn",
         choices=["resnet", "small_cnn"],
         help="Vision encoder: resnet (ImageNet pretrained) or small_cnn (trained from scratch)",
     )
@@ -312,6 +319,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         use_depth=args.use_depth,
         single_camera=single_camera,
         bev_depth_wrist_rgb=args.bev_depth_wrist_rgb,
+        start_pose=args.start_pose,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
@@ -844,6 +852,7 @@ def main():
     print(f"Observation type: {args.obs_type}")
     print(f"UTD ratio: {args.utd_ratio}")
     print(f"Encoder type: {args.encoder_type}")
+    print(f"Start pose: {args.start_pose}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")

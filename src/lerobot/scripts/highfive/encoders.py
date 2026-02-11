@@ -84,6 +84,7 @@ class SmallCNN(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x: Tensor) -> Tensor:
+        x = x.contiguous()
         x = self.features(x)
         x = self.fc(x)
         return x
@@ -386,6 +387,10 @@ class FlexibleCameraEncoder(nn.Module):
         Returns:
             (B, output_dim) fused features
         """
+        # Ensure contiguous tensors (replay buffer fancy indexing can return non-contiguous)
+        birdseye = birdseye.contiguous()
+        state = state.contiguous()
+
         # Encode birdseye
         f_bird = self.encoder_birdseye(birdseye)
         f_bird = self.proj_birdseye(f_bird)
@@ -397,6 +402,7 @@ class FlexibleCameraEncoder(nn.Module):
             return torch.cat([f_bird, f_state], dim=-1)
 
         # Encode wrist
+        wrist = wrist.contiguous()
         f_wrist = self.encoder_wrist(wrist)
         f_wrist = self.proj_wrist(f_wrist)
 

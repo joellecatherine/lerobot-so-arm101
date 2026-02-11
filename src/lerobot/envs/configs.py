@@ -477,6 +477,7 @@ class HighFiveEnvConfig(EnvConfig):
     use_depth: bool = False  # Add depth channel (RGBD instead of RGB)
     single_camera: bool = False  # Use only birdseye camera
     bev_depth_wrist_rgb: bool = False  # Asymmetric: BEV depth-only + Wrist RGB
+    start_pose: str = "folded"  # Starting pose: "folded" or "neutral"
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -528,4 +529,5 @@ class HighFiveEnvConfig(EnvConfig):
             "use_depth": self.use_depth,
             "single_camera": self.single_camera,
             "bev_depth_wrist_rgb": self.bev_depth_wrist_rgb,
+            "start_pose": self.start_pose,
         }

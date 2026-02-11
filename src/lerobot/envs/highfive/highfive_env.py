@@ -51,6 +51,12 @@ DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.05  # 5cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 
+# Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
+START_POSES = {
+    "neutral": np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
+    "folded": np.array([0.0, -1.5, 1.5, 1.0, 0.0]),
+}
+
 
 def get_asset_path() -> Path:
     """Get the path to the assets directory."""
@@ -91,13 +97,13 @@ class HighFiveEnv(gym.Env):
         "wrist_roll",
     ]
 
-    # Actuator names in the MuJoCo model
+    # Actuator names in the MuJoCo model (from so101_new_calib.xml)
     ACTUATOR_NAMES = [
-        "shoulder_pan_ctrl",
-        "shoulder_lift_ctrl",
-        "elbow_flex_ctrl",
-        "wrist_flex_ctrl",
-        "wrist_roll_ctrl",
+        "shoulder_pan",
+        "shoulder_lift",
+        "elbow_flex",
+        "wrist_flex",
+        "wrist_roll",
     ]
 
     def __init__(
@@ -118,6 +124,7 @@ class HighFiveEnv(gym.Env):
         use_depth: bool = False,
         single_camera: bool = False,
         bev_depth_wrist_rgb: bool = False,
+        start_pose: str = "folded",
     ):
         """Initialize the High-Five environment.
 
@@ -156,6 +163,7 @@ class HighFiveEnv(gym.Env):
         self.use_depth = use_depth
         self.single_camera = single_camera
         self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
+        self.start_pose = start_pose
 
         # Load MuJoCo model
         self._load_model()
@@ -166,10 +174,9 @@ class HighFiveEnv(gym.Env):
         self._rng = np.random.default_rng(seed)
 
         # Hand motion parameters (scaled by motion_freq_scale)
-        # Arm EE is constrained to x≈-0.159. hand_contact site is offset
-        # (-0.03, 0, +0.02) from body pos due to 90° Z rotation.
-        # So body_x = -0.159 + 0.03 = -0.129 aligns contact with EE.
-        self._hand_base_pos = np.array([-0.129, 0.0, 0.45])
+        # Robot base is at origin. Reachable bounds:
+        #   x: [0.30, 0.50], y: [-0.20, +0.20], z: [0.20, 0.30]
+        self._hand_base_pos = np.array([0.40, 0.0, 0.25])
         self._hand_motion_amplitude = np.array([0.05, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
@@ -236,6 +243,11 @@ class HighFiveEnv(gym.Env):
             self._model, mujoco.mjtObj.mjOBJ_JOINT, "hand_free"
         )
         self._hand_qpos_addr = self._model.jnt_qposadr[self._hand_joint_id]
+
+        # Gripper actuator (6th DOF) — held closed during high-five
+        self._gripper_actuator_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper"
+        )
 
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
@@ -426,22 +438,22 @@ class HighFiveEnv(gym.Env):
             target_pos = self._hand_base_pos + offset
 
         elif self.hand_motion_type == "random_walk":
-            # Smooth random walk — never repeats, can't be intercepted by waiting
+            # Target-based random walk: pick a random target, move toward it smoothly,
+            # then pick a new target on arrival. Large amplitude, controlled speed.
+            bounds_lo = np.array([0.30, -0.20, 0.20])
+            bounds_hi = np.array([0.50, 0.20, 0.30])
             if not hasattr(self, '_hand_walk_pos'):
                 self._hand_walk_pos = self._hand_base_pos.copy()
-            # Random velocity, scaled by motion_freq_scale
-            step_size = 0.003 * self.motion_freq_scale
-            self._hand_walk_pos += self._rng.normal(0, step_size, size=3)
-            # Clamp to absolute workspace bounds (verified reachable from diagnostic).
-            # EE range: x[-0.25,+0.27], y[-0.25,+0.14], z[0.14,0.68]
-            # Contact site offset from body pos: (-0.03, 0, +0.02)
-            # So body pos bounds = EE bounds adjusted by inverse offset:
-            #   body_x: [-0.25+0.03, +0.27+0.03] = [-0.22, +0.30] → use [-0.20, +0.20] (safe margin)
-            #   body_y: [-0.25, +0.14] → use [-0.10, +0.10]
-            #   body_z: [0.14-0.02, 0.68-0.02] = [0.12, 0.66] → use [0.35, 0.55]
-            self._hand_walk_pos[0] = np.clip(self._hand_walk_pos[0], -0.20, 0.0)
-            self._hand_walk_pos[1] = np.clip(self._hand_walk_pos[1], -0.10, 0.10)
-            self._hand_walk_pos[2] = np.clip(self._hand_walk_pos[2], 0.35, 0.55)
+                self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
+            # Move toward target at constant speed
+            move_speed = 0.006 * self.motion_freq_scale
+            diff = self._hand_walk_target - self._hand_walk_pos
+            dist = np.linalg.norm(diff)
+            if dist < 0.01:
+                # Reached target, pick a new one
+                self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
+            else:
+                self._hand_walk_pos += diff / dist * move_speed
             target_pos = self._hand_walk_pos.copy()
 
         elif self.hand_motion_type == "tracking":
@@ -506,15 +518,17 @@ class HighFiveEnv(gym.Env):
                 self._model.geom_size[geom_id] = self._original_hand_sizes[geom_id] * hand_scale
 
         # === Hand base position randomization ===
-        # hand_contact site offset: (-0.03, 0, +0.02) from body pos (90° Z rotation).
-        # With shoulder_pan working, EE x-range is ~[-0.25, +0.05].
-        # body_x = -0.129 → contact at x ≈ -0.159 (center of EE x-range).
-        base_hand_pos = np.array([-0.129, 0.0, 0.45])
+        # Robot base at origin. Randomize within verified bounds: x[0.30,0.50], y[-0.20,0.20], z[0.20,0.30]
+        base_hand_pos = np.array([0.40, 0.0, 0.25])
         offset = self._rng.uniform(
-            [-0.08, -0.08, -0.05],
-            [0.08, 0.08, 0.08]
+            [-0.08, -0.08, -0.03],
+            [0.08, 0.08, 0.03]
         )
-        self._hand_base_pos = base_hand_pos + offset
+        self._hand_base_pos = np.clip(
+            base_hand_pos + offset,
+            [0.30, -0.20, 0.20],
+            [0.50, 0.20, 0.30],
+        )
 
         # === Camera position/angle randomization ===
         # Birdseye camera randomization
@@ -641,15 +655,13 @@ class HighFiveEnv(gym.Env):
         # Apply domain randomization
         self._apply_domain_randomization()
 
-        # Set robot starting position (randomized if domain_randomization enabled)
+        # Set robot starting position
+        base_qpos = START_POSES[self.start_pose]
         if self.domain_randomization:
-            # Randomize starting joint positions within safe range
-            # Joint limits: shoulder_pan ±1.92, shoulder_lift ±1.75, elbow_flex ±1.69,
-            #               wrist_flex ±1.66, wrist_roll ±2.74
-            # Use smaller range (±0.5 rad) to start in reachable poses
-            initial_qpos = self._rng.uniform(-0.5, 0.5, size=5)
+            # Add noise around the start pose (±0.3 rad)
+            initial_qpos = base_qpos + self._rng.uniform(-0.3, 0.3, size=5)
         else:
-            initial_qpos = np.array([0.0, 0.0, 0.0, 0.0, 0.0])  # Neutral pose
+            initial_qpos = base_qpos.copy()
 
         for i, joint_id in enumerate(self._joint_ids):
             qpos_addr = self._model.jnt_qposadr[joint_id]
@@ -669,6 +681,8 @@ class HighFiveEnv(gym.Env):
         # Reset random walk position
         if hasattr(self, '_hand_walk_pos'):
             del self._hand_walk_pos
+        if hasattr(self, '_hand_walk_target'):
+            del self._hand_walk_target
 
         observation = self._get_observation()
         info = {
@@ -706,6 +720,9 @@ class HighFiveEnv(gym.Env):
             self._data.ctrl[actuator_id] = (
                 ctrl_range[0] + (action[i] + 1) * 0.5 * (ctrl_range[1] - ctrl_range[0])
             )
+
+        # Hold gripper closed (fist for high-five)
+        self._data.ctrl[self._gripper_actuator_id] = 0.0
 
         # Update hand position
         self._update_hand_position()

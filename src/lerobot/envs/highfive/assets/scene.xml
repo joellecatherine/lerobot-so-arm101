@@ -1,35 +1,14 @@
 <mujoco model="highfive_scene">
   <!--
     High-Five Robot Environment for SO-ARM101
-    Bird's eye camera tracks hand target, robot moves to intercept
+    Uses official SO-101 CAD model from TheRobotStudio/SO-ARM100
   -->
 
-  <compiler angle="radian" meshdir="." autolimits="true"/>
+  <include file="so101_new_calib.xml"/>
 
   <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast">
     <flag warmstart="enable"/>
   </option>
-
-  <default>
-    <joint armature="0.01" damping="0.5"/>
-    <motor ctrlrange="-1 1" ctrllimited="true"/>
-    <geom condim="4" friction="1 0.5 0.001"/>
-    <default class="visual">
-      <geom contype="0" conaffinity="0" group="2"/>
-    </default>
-    <default class="collision">
-      <geom group="3"/>
-    </default>
-    <default class="robot">
-      <geom rgba="1.0 0.82 0.12 1.0" contype="0" conaffinity="0"/>
-    </default>
-    <default class="motor">
-      <geom rgba="0.1 0.1 0.1 1.0" contype="0" conaffinity="0"/>
-    </default>
-    <default class="target">
-      <geom rgba="0.9 0.4 0.4 0.8"/>
-    </default>
-  </default>
 
   <asset>
     <!-- Textures for domain randomization -->
@@ -37,10 +16,7 @@
     <texture name="texskybox" type="skybox" builtin="gradient" rgb1="0.4 0.6 0.8" rgb2="0.8 0.9 1.0" width="512" height="512"/>
 
     <material name="matplane" texture="texplane" texrepeat="5 5" reflectance="0.1"/>
-    <material name="matrobot" rgba="1.0 0.82 0.12 1.0" specular="0.4" shininess="0.1"/>
-    <material name="matmotor" rgba="0.1 0.1 0.1 1.0" specular="0.6" shininess="0.3"/>
     <material name="mathand" rgba="0.9 0.6 0.5 1.0" specular="0.3" shininess="0.05"/>
-    <material name="matfist" rgba="0.9 0.4 0.4 0.9" specular="0.5" shininess="0.2"/>
   </asset>
 
   <worldbody>
@@ -51,136 +27,33 @@
     <!-- Ground plane -->
     <geom name="floor" type="plane" size="1 1 0.1" pos="0 0 0" material="matplane"/>
 
-    <!-- Table/workspace surface -->
-    <body name="table" pos="0 0 0.3">
-      <geom name="tabletop" type="box" size="0.4 0.3 0.01" rgba="0.6 0.5 0.4 1" mass="10"/>
-    </body>
-
-    <!-- ============== SO-ARM101 Robot ============== -->
-    <body name="robot_base" pos="-0.15 0 0.31">
-      <!-- Base link -->
-      <geom name="base_visual" type="box" size="0.04 0.04 0.0435" pos="0 0 0.0435" class="robot" material="matrobot"/>
-      <geom name="base_motor" type="cylinder" size="0.02 0.02" pos="0.026 0 0.0437" class="motor" material="matmotor"/>
-
-      <!-- Shoulder pan joint -->
-      <body name="shoulder" pos="0.039 0 0.087">
-        <joint name="shoulder_pan" type="hinge" axis="0 0 1" range="-1.92 1.92" damping="0.8"/>
-        <geom name="shoulder_visual" type="box" size="0.03 0.02 0.04" pos="-0.03 0 0" class="robot" material="matrobot"/>
-        <geom name="shoulder_motor" type="cylinder" size="0.018 0.02" pos="-0.03 0 -0.04" euler="1.57 0 0" class="motor" material="matmotor"/>
-
-        <!-- Shoulder lift joint -->
-        <body name="upper_arm" pos="-0.03 -0.018 -0.054" euler="-1.5708 -1.5708 0">
-          <joint name="shoulder_lift" type="hinge" axis="0 0 1" range="-1.75 1.75" damping="0.8"/>
-          <geom name="upper_arm_visual" type="box" size="0.056 0.0175 0.0175" pos="-0.056 0 0" class="robot" material="matrobot"/>
-          <geom name="upper_arm_motor" type="cylinder" size="0.018 0.02" pos="-0.112 -0.015 0" euler="0 1.57 0" class="motor" material="matmotor"/>
-
-          <!-- Elbow flex joint -->
-          <body name="lower_arm" pos="-0.112 -0.028 0" euler="0 0 1.5708">
-            <joint name="elbow_flex" type="hinge" axis="0 0 1" range="-1.69 1.69" damping="0.6"/>
-            <geom name="lower_arm_visual" type="box" size="0.067 0.0175 0.0175" pos="-0.067 0 0" class="robot" material="matrobot"/>
-            <geom name="lower_arm_motor" type="cylinder" size="0.018 0.02" pos="-0.122 0.005 0" euler="0 1.57 0" class="motor" material="matmotor"/>
-
-            <!-- Wrist flex joint -->
-            <body name="wrist" pos="-0.135 0.005 0" euler="0 0 -1.5708">
-              <joint name="wrist_flex" type="hinge" axis="0 0 1" range="-1.66 1.66" damping="0.4"/>
-              <geom name="wrist_visual" type="box" size="0.0175 0.03 0.0175" pos="0 -0.03 0" class="robot" material="matrobot"/>
-              <geom name="wrist_motor" type="cylinder" size="0.018 0.02" pos="0 -0.042 0.03" euler="1.57 0 0" class="motor" material="matmotor"/>
-
-              <!-- Wrist roll joint -->
-              <body name="gripper_body" pos="0 -0.061 0.018" euler="1.5708 0 3.14159">
-                <joint name="wrist_roll" type="hinge" axis="0 0 1" range="-2.74 2.84" damping="0.3"/>
-                <geom name="gripper_base" type="box" size="0.02 0.02 0.03" pos="0 0 0.03" class="robot" material="matrobot"/>
-
-                <!-- Gripper/fist - at the tip of gripper (in +Z due to body rotation) -->
-                <geom name="fist" type="sphere" size="0.025" pos="0 0 0.085" class="robot" material="matfist" rgba="0.9 0.4 0.4 1"/>
-
-                <!-- End effector site for distance computation - at tip of fist -->
-                <site name="ee_site" pos="0 0 0.11" size="0.01" rgba="1 0 0 0.5"/>
-
-                <!-- Wrist camera - fixed mount like physical SO-101 -->
-                <!-- Gripper box edge is at Y=0.02, so camera at Y=0.05 (3cm outside) -->
-                <!-- Euler: 135° around X to look toward -Y (center) and +Z (fist) at 45° -->
-                <camera name="wrist" pos="0 0.06 0.03" euler="3.8 0 0" fovy="90"/>
-
-                <!-- Visual representation of wrist camera (for debugging) -->
-                <geom name="wrist_cam_body" type="box" size="0.01 0.01 0.01" pos="0 0.06 0.03"
-                      euler="3.8 0 0" rgba="0.0 0.5 1.0 1" contype="0" conaffinity="0" group="2"/>
-                <geom name="wrist_cam_lens" type="cylinder" size="0.008 0.005" pos="0 0.055 0.035"
-                      euler="3.8 0 0" rgba="0.0 0.7 1.0 1" contype="0" conaffinity="0" group="2"/>
-              </body>
-            </body>
-          </body>
-        </body>
-      </body>
-    </body>
-
     <!-- ============== Hand Target ============== -->
-    <!-- Movable target representing human hand/fist for high-five -->
-    <!-- Position adjusted to be within robot's ~30cm reach workspace -->
-    <!-- Rotated -90° around Z so palm faces -X (toward robot) -->
-    <body name="hand_target" pos="0.0 0 0.45" euler="0 0 1.5708">
-      <!-- Free joint allows hand to be positioned anywhere -->
+    <!-- Robot base is at origin; position hand relative to it -->
+    <body name="hand_target" pos="0.40 0 0.25" euler="0 0 1.5708">
       <joint name="hand_free" type="free"/>
-
-      <!-- Palm - faces -X direction (toward robot) after body rotation -->
       <geom name="palm" type="box" size="0.04 0.01 0.05" pos="0 0 0" material="mathand"/>
-
-      <!-- Fingers (curled into fist shape) -->
       <geom name="fingers" type="capsule" size="0.02 0.03" pos="0 0.02 0.03" euler="0.4 0 0" material="mathand"/>
-
-      <!-- Thumb -->
       <geom name="thumb" type="capsule" size="0.012 0.02" pos="0.035 0.01 0" euler="0 0.3 0.5" material="mathand"/>
-
-      <!-- Contact site - in front of palm (toward robot) -->
-      <site name="hand_contact" pos="0 0.03 0.02" size="0.02" rgba="0 1 0 0.3"/>
+      <site name="hand_contact" pos="0 0.03 0.02" size="0.05" rgba="0 1 0 0.3"/>
     </body>
 
     <!-- ============== Cameras ============== -->
-    <!-- Bird's eye view camera (main observation) -->
     <camera name="birdseye" pos="0 0 1.2" euler="0 0 0" fovy="60"/>
-
-    <!-- Alternative angled bird's eye -->
     <camera name="birdseye_angled" pos="0.3 -0.3 1.0" euler="0.3 0.3 0" fovy="50"/>
-
-    <!-- Side view for debugging -->
     <camera name="side" pos="0.8 0 0.5" euler="0 1.57 0" fovy="45"/>
-
-    <!-- Robot wrist camera (optional, for future use) -->
-    <!-- Attached to gripper body in robot definition -->
 
   </worldbody>
 
-  <!-- ============== Actuators ============== -->
-  <actuator>
-    <!-- Position controllers for robot joints -->
-    <position name="shoulder_pan_ctrl" joint="shoulder_pan" kp="50" ctrlrange="-1.92 1.92"/>
-    <position name="shoulder_lift_ctrl" joint="shoulder_lift" kp="50" ctrlrange="-1.75 1.75"/>
-    <position name="elbow_flex_ctrl" joint="elbow_flex" kp="40" ctrlrange="-1.69 1.69"/>
-    <position name="wrist_flex_ctrl" joint="wrist_flex" kp="30" ctrlrange="-1.66 1.66"/>
-    <position name="wrist_roll_ctrl" joint="wrist_roll" kp="20" ctrlrange="-2.74 2.84"/>
-  </actuator>
-
   <!-- ============== Sensors ============== -->
   <sensor>
-    <!-- Joint position sensors -->
     <jointpos name="shoulder_pan_pos" joint="shoulder_pan"/>
     <jointpos name="shoulder_lift_pos" joint="shoulder_lift"/>
     <jointpos name="elbow_flex_pos" joint="elbow_flex"/>
     <jointpos name="wrist_flex_pos" joint="wrist_flex"/>
     <jointpos name="wrist_roll_pos" joint="wrist_roll"/>
-
-    <!-- End effector position -->
     <framepos name="ee_pos" objtype="site" objname="ee_site"/>
-
-    <!-- Hand target position -->
     <framepos name="hand_pos" objtype="site" objname="hand_contact"/>
   </sensor>
 
-  <!-- ============== Contact Pairs ============== -->
-  <!-- Define contact between robot fist and hand target -->
-  <contact>
-    <pair geom1="fist" geom2="palm" condim="4"/>
-    <pair geom1="fist" geom2="fingers" condim="4"/>
-  </contact>
 
 </mujoco>

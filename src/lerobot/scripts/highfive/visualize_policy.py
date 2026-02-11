@@ -1,18 +1,22 @@
 #!/usr/bin/env python
-"""Visualize a trained policy: render episodes and print tracking info.
-
-Saves a video and prints EE/hand positions to verify the robot is
-actually tracking the hand vs getting lucky.
+"""Visualize a trained policy: render episodes in MuJoCo viewer or save video.
 
 Usage:
+    # Live 3D viewer (default)
     python -m lerobot.scripts.highfive.visualize_policy \
-        --checkpoint outputs/highfive/sac_XXXX/checkpoints/best_model \
-        --num_episodes 3 --device cuda
+        --checkpoint outputs/highfive/sac_XXXX/checkpoints/final_model \
+        --hand_motion_type random_walk --num_episodes 3
+
+    # Save video file
+    python -m lerobot.scripts.highfive.visualize_policy \
+        --checkpoint outputs/highfive/sac_XXXX/checkpoints/final_model \
+        --render_mode rgb_array --save_video out.mp4
 """
 
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +34,8 @@ def main():
     parser.add_argument("--obs_type", type=str, default="pixels_agent_pos")
     parser.add_argument("--encoder_type", type=str, default="small_cnn")
     parser.add_argument("--observation_size", type=int, default=84)
+    parser.add_argument("--render_mode", type=str, default="human", choices=["human", "rgb_array"],
+                        help="human = live MuJoCo viewer, rgb_array = offscreen (use with --save_video)")
     args = parser.parse_args()
 
     from lerobot.envs.highfive.highfive_env import HighFiveEnv
@@ -44,7 +50,7 @@ def main():
         single_camera=False,
         observation_width=args.observation_size,
         observation_height=args.observation_size,
-        render_mode="rgb_array",
+        render_mode=args.render_mode,
     )
 
     # Load policy
@@ -144,14 +150,20 @@ def main():
                       f"[{hand_pos[0]:+.3f}, {hand_pos[1]:+.3f}, {hand_pos[2]:+.3f}] | "
                       f"{dist:.4f} | {reward:+.2f}")
 
-            # Capture frame for video
-            if args.save_video:
+            # Render: live viewer or capture frames for video
+            if args.render_mode == "human":
+                env.render()
+                time.sleep(1 / 30)  # throttle to ~30fps
+            elif args.save_video:
                 frame = env.render()
                 if frame is not None:
                     video_frames.append(frame)
 
         success = "SUCCESS" if info.get("is_success", False) else "FAIL"
         print(f"\nResult: {success} | Total reward: {total_reward:.2f} | Steps: {step}")
+
+        if args.render_mode == "human":
+            time.sleep(1.0)  # pause between episodes
 
     # Save video if requested
     if args.save_video and video_frames:
