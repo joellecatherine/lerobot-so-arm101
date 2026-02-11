@@ -49,9 +49,9 @@ ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.01  # 1cm threshold for successful high-five
-PROXIMITY_THRESHOLD = 0.03  # 3cm — bonus reward zone
-PROXIMITY_BONUS = 5.0  # Bonus when within 3cm
 CONTACT_BONUS = 10.0  # Bonus reward for contact
+PROXIMITY_SIGMA = 0.05  # 5cm Gaussian width for smooth proximity bonus
+PROXIMITY_SCALE = 2.0  # Peak magnitude of proximity bonus at distance=0
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -353,10 +353,19 @@ class HighFiveEnv(gym.Env):
 
         renderer = self._renderers[renderer_key]
 
+        # Scene options: hide debug visuals from camera renders (ee_site, hand_contact
+        # sites and fist geom are only for distance computation / debugging)
+        if not hasattr(self, '_scene_option'):
+            self._scene_option = mujoco.MjvOption()
+            for i in range(6):
+                self._scene_option.sitegroup[i] = 0
+            # Hide geom group 4 (debug-only geoms like the fist sphere)
+            self._scene_option.geomgroup[4] = 0
+
         if depth_only:
             # Render depth-only image (1 channel)
             renderer.enable_depth_rendering = True
-            renderer.update_scene(self._data, camera=camera_id)
+            renderer.update_scene(self._data, camera=camera_id, scene_option=self._scene_option)
             depth = renderer.render()
             renderer.enable_depth_rendering = False
 
@@ -369,13 +378,13 @@ class HighFiveEnv(gym.Env):
             return depth_normalized[..., np.newaxis]
 
         # Standard RGB rendering
-        renderer.update_scene(self._data, camera=camera_id)
+        renderer.update_scene(self._data, camera=camera_id, scene_option=self._scene_option)
         image = renderer.render()
 
         if include_depth:
             # Render depth image
             renderer.enable_depth_rendering = True
-            renderer.update_scene(self._data, camera=camera_id)
+            renderer.update_scene(self._data, camera=camera_id, scene_option=self._scene_option)
             depth = renderer.render()
             renderer.enable_depth_rendering = False
 
@@ -740,9 +749,9 @@ class HighFiveEnv(gym.Env):
         distance = self._compute_distance()
         reward = -10.0 * distance
 
-        # Proximity bonus: reward for getting within 3cm (encourages fine approach)
-        if distance < PROXIMITY_THRESHOLD:
-            reward += PROXIMITY_BONUS
+        # Smooth proximity bonus: Gaussian centered at distance=0
+        # Reaches ~1.0 at d=0, starts being felt around d=10cm
+        reward += PROXIMITY_SCALE * np.exp(-(distance ** 2) / (2 * PROXIMITY_SIGMA ** 2))
 
         # Check for contact (success)
         is_contact = self._check_contact()

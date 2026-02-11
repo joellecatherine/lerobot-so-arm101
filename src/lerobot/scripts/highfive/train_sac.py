@@ -255,6 +255,12 @@ def parse_args() -> argparse.Namespace:
         help="Target network soft update coefficient",
     )
     parser.add_argument(
+        "--target_entropy",
+        type=float,
+        default=None,
+        help="Target entropy for SAC temperature tuning (default: -action_dim/2). Higher = more exploration.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -416,6 +422,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         output_features=output_features,
         # SAC hyperparameters
         discount=args.discount,
+        target_entropy=args.target_entropy,
         critic_target_update_weight=args.tau,
         critic_lr=args.learning_rate,
         actor_lr=args.learning_rate,
