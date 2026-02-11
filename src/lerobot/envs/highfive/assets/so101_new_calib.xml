@@ -112,7 +112,7 @@
                 <!-- End effector site for distance computation (co-located with gripperframe) -->
                 <site name="ee_site" pos="-0.0079 -0.000218121 -0.0981274" size="0.01" rgba="1 0 0 0.5"/>
                 <!-- Fist geom for contact detection with hand target -->
-                <geom name="fist" type="sphere" size="0.05" pos="0 0 -0.07" rgba="0.9 0.4 0.4 0.5" contype="0" conaffinity="0"/>
+                <geom name="fist" type="sphere" size="0.01" pos="-0.0079 -0.000218121 -0.0981274" rgba="0.9 0.4 0.4 0.5" contype="0" conaffinity="0"/>
                 <!-- Wrist camera + visual stand-in -->
                 <camera name="wrist" pos="0 0.05 -0.02" euler="2.0 0 0" fovy="90"/>
                 <geom name="wrist_cam_body" type="box" size="0.01 0.01 0.01" pos="0 0.05 -0.02"

@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num_steps",
         type=int,
-        default=500_000,
+        default=100_000,
         help="Total number of training steps",
     )
     parser.add_argument(
