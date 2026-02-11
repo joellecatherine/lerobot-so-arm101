@@ -465,7 +465,7 @@ class HighFiveEnvConfig(EnvConfig):
 
     task: str = "highfive-v0"
     fps: int = 30
-    episode_length: int = 200
+    episode_length: int = 100
     obs_type: str = "pixels_agent_pos"
     render_mode: str = "rgb_array"
     observation_height: int = 224

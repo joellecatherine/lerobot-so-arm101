@@ -48,7 +48,7 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_THRESHOLD = 0.05  # 5cm threshold for successful high-five
+CONTACT_THRESHOLD = 0.01  # 1cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
@@ -175,8 +175,8 @@ class HighFiveEnv(gym.Env):
 
         # Hand motion parameters (scaled by motion_freq_scale)
         # Robot base is at origin. Reachable bounds:
-        #   x: [0.30, 0.50], y: [-0.20, +0.20], z: [0.20, 0.30]
-        self._hand_base_pos = np.array([0.40, 0.0, 0.25])
+        #   x: [0.35, 0.55], y: [-0.40, +0.40], z: [0.20, 0.30]
+        self._hand_base_pos = np.array([0.45, 0.0, 0.25])
         self._hand_motion_amplitude = np.array([0.05, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
@@ -440,8 +440,8 @@ class HighFiveEnv(gym.Env):
         elif self.hand_motion_type == "random_walk":
             # Target-based random walk: pick a random target, move toward it smoothly,
             # then pick a new target on arrival. Large amplitude, controlled speed.
-            bounds_lo = np.array([0.30, -0.20, 0.20])
-            bounds_hi = np.array([0.50, 0.20, 0.30])
+            bounds_lo = np.array([0.35, -0.40, 0.20])
+            bounds_hi = np.array([0.55, 0.40, 0.30])
             if not hasattr(self, '_hand_walk_pos'):
                 self._hand_walk_pos = self._hand_base_pos.copy()
                 self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
@@ -518,16 +518,16 @@ class HighFiveEnv(gym.Env):
                 self._model.geom_size[geom_id] = self._original_hand_sizes[geom_id] * hand_scale
 
         # === Hand base position randomization ===
-        # Robot base at origin. Randomize within verified bounds: x[0.30,0.50], y[-0.20,0.20], z[0.20,0.30]
-        base_hand_pos = np.array([0.40, 0.0, 0.25])
+        # Robot base at origin. Randomize within verified bounds: x[0.35,0.55], y[-0.40,0.40], z[0.20,0.30]
+        base_hand_pos = np.array([0.45, 0.0, 0.25])
         offset = self._rng.uniform(
-            [-0.08, -0.08, -0.03],
-            [0.08, 0.08, 0.03]
+            [-0.10, -0.20, -0.03],
+            [0.10, 0.20, 0.03]
         )
         self._hand_base_pos = np.clip(
             base_hand_pos + offset,
-            [0.30, -0.20, 0.20],
-            [0.50, 0.20, 0.30],
+            [0.35, -0.40, 0.20],
+            [0.55, 0.40, 0.30],
         )
 
         # === Camera position/angle randomization ===

@@ -106,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--episode_length",
         type=int,
-        default=200,
+        default=100,
         help="Maximum episode length",
     )
     parser.add_argument(
@@ -153,7 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--motion_freq_scale",
         type=float,
-        default=0.3,
+        default=0.5,
         help="Scale factor for hand motion frequency (0.5 = half speed)",
     )
     parser.add_argument(
