@@ -49,6 +49,8 @@ ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.01  # 1cm threshold for successful high-five
+PROXIMITY_THRESHOLD = 0.03  # 3cm — bonus reward zone
+PROXIMITY_BONUS = 5.0  # Bonus when within 3cm
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
@@ -737,6 +739,10 @@ class HighFiveEnv(gym.Env):
         # Compute reward
         distance = self._compute_distance()
         reward = -10.0 * distance
+
+        # Proximity bonus: reward for getting within 3cm (encourages fine approach)
+        if distance < PROXIMITY_THRESHOLD:
+            reward += PROXIMITY_BONUS
 
         # Check for contact (success)
         is_contact = self._check_contact()

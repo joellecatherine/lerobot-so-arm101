@@ -33,7 +33,7 @@
       <joint name="hand_free" type="free"/>
       <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="0"/>
       <geom name="thumb" type="capsule" size="0.01 0.02" pos="-0.044 0 -0.009" euler="0 -0.7854 0" material="mathand" contype="0" conaffinity="0"/>
-      <site name="hand_contact" pos="0 0.01 0" size="0.01" rgba="0 1 0 0.5"/>
+      <site name="hand_contact" pos="0 0.01 0" size="0.03" rgba="0 1 0 0.3"/>
     </body>
 
     <!-- ============== Cameras ============== -->
