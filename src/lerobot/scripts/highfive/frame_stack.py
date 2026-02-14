@@ -63,8 +63,14 @@ class FrameStackWrapper(gym.Wrapper):
                         else:
                             new_pixel_spaces[cam_key] = cam_space
                     new_spaces[key] = spaces.Dict(new_pixel_spaces)
+                elif key == "agent_pos" and isinstance(space, spaces.Box):
+                    # Stack joint positions along last dimension
+                    old_shape = space.shape
+                    new_shape = (old_shape[0] * self.n_frames,)
+                    new_spaces[key] = spaces.Box(
+                        low=-np.inf, high=np.inf, shape=new_shape, dtype=space.dtype,
+                    )
                 else:
-                    # Keep non-pixel observations unchanged
                     new_spaces[key] = space
 
             self.observation_space = spaces.Dict(new_spaces)
@@ -103,8 +109,17 @@ class FrameStackWrapper(gym.Wrapper):
                     stacked_pixels[cam_key] = stacked
 
                 stacked_obs[key] = stacked_pixels
+            elif key == "agent_pos":
+                # Stack joint positions for velocity information
+                buffer_key = "agent_pos"
+                if buffer_key not in self._frames:
+                    self._frames[buffer_key] = deque(maxlen=self.n_frames)
+                    for _ in range(self.n_frames):
+                        self._frames[buffer_key].append(value.copy())
+                else:
+                    self._frames[buffer_key].append(value.copy())
+                stacked_obs[key] = np.concatenate(list(self._frames[buffer_key]), axis=-1)
             else:
-                # Non-pixel observations pass through unchanged
                 stacked_obs[key] = value
 
         return stacked_obs
@@ -167,6 +182,12 @@ class VecFrameStackWrapper:
                         else:
                             new_pixel_spaces[cam_key] = cam_space
                     new_spaces[key] = spaces.Dict(new_pixel_spaces)
+                elif key == "agent_pos" and isinstance(space, spaces.Box):
+                    old_shape = space.shape
+                    new_shape = (old_shape[0] * self.n_frames,)
+                    new_spaces[key] = spaces.Box(
+                        low=-np.inf, high=np.inf, shape=new_shape, dtype=space.dtype,
+                    )
                 else:
                     new_spaces[key] = space
             self.single_observation_space = spaces.Dict(new_spaces)
@@ -197,6 +218,15 @@ class VecFrameStackWrapper:
                     stacked_pixels[cam_key] = stacked
 
                 stacked_obs[key] = stacked_pixels
+            elif key == "agent_pos":
+                buffer_key = "agent_pos"
+                if buffer_key not in self._frames:
+                    self._frames[buffer_key] = deque(maxlen=self.n_frames)
+                    for _ in range(self.n_frames):
+                        self._frames[buffer_key].append(value.copy())
+                else:
+                    self._frames[buffer_key].append(value.copy())
+                stacked_obs[key] = np.concatenate(list(self._frames[buffer_key]), axis=-1)
             else:
                 stacked_obs[key] = value
 

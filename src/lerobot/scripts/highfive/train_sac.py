@@ -49,7 +49,55 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import optim
+
+
+def random_shift(images: torch.Tensor, pad: int = 4) -> torch.Tensor:
+    """DrQ-style random shift augmentation.
+
+    Pads the image and takes a random crop of the original size.
+    Applied independently per batch element.
+
+    Args:
+        images: (B, C, H, W) tensor
+        pad: number of pixels to pad on each side (default: 4)
+
+    Returns:
+        Augmented (B, C, H, W) tensor
+    """
+    B, C, H, W = images.shape
+    padded = F.pad(images, [pad] * 4, mode="replicate")
+    # Random crop offsets per batch element
+    crop_h = torch.randint(0, 2 * pad + 1, (B,))
+    crop_w = torch.randint(0, 2 * pad + 1, (B,))
+    cropped = torch.empty_like(images)
+    for i in range(B):
+        cropped[i] = padded[i, :, crop_h[i]:crop_h[i] + H, crop_w[i]:crop_w[i] + W]
+    return cropped
+
+
+def augment_batch(batch: dict, pad: int = 4) -> dict:
+    """Apply random shift augmentation to all images in a batch.
+
+    Args:
+        batch: dict with 'state', 'next_state' containing image tensors
+        pad: shift padding size
+
+    Returns:
+        New batch dict with augmented images
+    """
+    from lerobot.utils.constants import OBS_IMAGES
+
+    augmented = dict(batch)
+    for key in ["state", "next_state"]:
+        if key in augmented and isinstance(augmented[key], dict):
+            new_obs = dict(augmented[key])
+            for obs_key, tensor in new_obs.items():
+                if OBS_IMAGES in obs_key and tensor.dim() == 4:
+                    new_obs[obs_key] = random_shift(tensor, pad)
+            augmented[key] = new_obs
+    return augmented
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,7 +154,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--episode_length",
         type=int,
-        default=100,
+        default=200,
         help="Maximum episode length",
     )
     parser.add_argument(
@@ -193,6 +241,17 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Update-to-data ratio: gradient updates per env step (1 for pixels, 10-20 for state)",
+    )
+    parser.add_argument(
+        "--random_shift",
+        action="store_true",
+        help="Apply DrQ-style random shift augmentation to images during training",
+    )
+    parser.add_argument(
+        "--shift_pad",
+        type=int,
+        default=4,
+        help="Padding size for random shift augmentation (default: 4 pixels)",
     )
 
     # Logging and saving
@@ -384,7 +443,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
             ),
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(5,),
+                shape=(5 * n_frames,),
             ),
         }
 
@@ -396,7 +455,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
 
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 5,
+            "state_dim": 5 * n_frames,
             "pretrained": True,
             "freeze_backbones": not args.unfreeze_backbones,
             "fusion": args.fusion,
@@ -574,9 +633,11 @@ def train(args: argparse.Namespace):
         except ImportError:
             print("Wandb not installed, skipping logging")
 
-    # Create environment
-    print("Creating environment...")
+    # Create training and evaluation environments (separate to avoid state contamination)
+    print("Creating training environment...")
     env = create_env(args)
+    print("Creating evaluation environment...")
+    eval_env = create_env(args)
 
     # Create policy
     print(f"Creating SAC policy on device: {args.device}")
@@ -611,7 +672,13 @@ def train(args: argparse.Namespace):
     from lerobot.rl.buffer import ReplayBuffer
     from lerobot.utils.constants import OBS_IMAGES, OBS_STATE
 
-    state_keys = [f"{OBS_IMAGES}.image", OBS_STATE]
+    if args.obs_type == "state":
+        state_keys = [OBS_STATE]
+    elif args.single_camera:
+        state_keys = [f"{OBS_IMAGES}.birdseye", OBS_STATE]
+    else:
+        state_keys = [f"{OBS_IMAGES}.birdseye", f"{OBS_IMAGES}.wrist", OBS_STATE]
+
     replay_buffer = ReplayBuffer(
         capacity=args.buffer_capacity,
         device=args.device,
@@ -702,6 +769,10 @@ def train(args: argparse.Namespace):
         if global_step >= args.warmup_steps and len(replay_buffer) >= args.batch_size:
             for _utd in range(args.utd_ratio):
                 batch = replay_buffer.sample(args.batch_size)
+
+                # Apply random shift augmentation if enabled
+                if args.random_shift:
+                    batch = augment_batch(batch, pad=args.shift_pad)
 
                 # Train critic
                 critic_loss_dict = policy.forward(batch, model="critic")
@@ -802,7 +873,7 @@ def train(args: argparse.Namespace):
         # Evaluation
         if global_step % args.eval_freq == 0 and global_step > args.warmup_steps:
             print(f"\nEvaluating at step {global_step}...")
-            eval_metrics = evaluate(policy, env, args.eval_episodes, args.device)
+            eval_metrics = evaluate(policy, eval_env, args.eval_episodes, args.device)
 
             for k, v in eval_metrics.items():
                 print(f"  {k}: {v:.4f}")
@@ -832,6 +903,7 @@ def train(args: argparse.Namespace):
         wandb_run.finish()
 
     env.close()
+    eval_env.close()
 
     return policy
 

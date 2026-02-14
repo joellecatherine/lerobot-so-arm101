@@ -50,7 +50,7 @@ ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.01  # 1cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
-PROXIMITY_SIGMA = 0.05  # 5cm Gaussian width for smooth proximity bonus
+PROXIMITY_SIGMA = 0.12  # 12cm Gaussian width for smooth proximity bonus
 PROXIMITY_SCALE = 2.0  # Peak magnitude of proximity bonus at distance=0
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
@@ -486,6 +486,9 @@ class HighFiveEnv(gym.Env):
         # Orientation: +90° around Z so palm faces -X (toward robot)
         # Quaternion for 90° Z rotation: [cos(45°), 0, 0, sin(45°)]
         self._data.qpos[self._hand_qpos_addr + 3:self._hand_qpos_addr + 7] = [0.7071, 0, 0, 0.7071]
+        # Zero out hand velocity so gravity doesn't drag it between substeps
+        hand_qvel_addr = self._model.jnt_dofadr[self._hand_joint_id]
+        self._data.qvel[hand_qvel_addr:hand_qvel_addr + 6] = 0.0
 
     def _apply_domain_randomization(self):
         """Apply domain randomization for sim-to-real transfer."""
