@@ -580,24 +580,22 @@ def evaluate(
         total_rewards.append(episode_reward)
         episode_lengths.append(episode_length)
 
-        # Check success from info (handle vectorized env format)
-        if "is_success" in info:
-            success = info["is_success"]
-            # Handle array from vectorized env
-            if hasattr(success, "__iter__") and not isinstance(success, (str, dict)):
-                success = success[0] if len(success) > 0 else False
-            total_successes.append(float(success))
-        elif "final_info" in info:
+        # Check success from info (handle vectorized env auto-reset)
+        # On terminal step, SyncVectorEnv auto-resets and moves the terminal
+        # info into "final_info". The top-level "is_success" is from the NEW
+        # episode (always False), so we must check "final_info" first.
+        success = False
+        if "final_info" in info:
             final_info = info["final_info"]
-            # Handle list of dicts from vectorized env
             if isinstance(final_info, (list, tuple)) and len(final_info) > 0:
                 final_info = final_info[0]
             if isinstance(final_info, dict):
-                total_successes.append(float(final_info.get("is_success", False)))
-            else:
-                total_successes.append(0.0)
-        else:
-            total_successes.append(0.0)
+                success = final_info.get("is_success", False)
+        elif "is_success" in info:
+            success = info["is_success"]
+            if hasattr(success, "__iter__") and not isinstance(success, (str, dict)):
+                success = success[0] if len(success) > 0 else False
+        total_successes.append(float(success))
 
     policy.train()
 
@@ -836,10 +834,14 @@ def train(args: argparse.Namespace):
             episode_count += 1
 
             is_success = False
-            if "is_success" in info:
+            if "final_info" in info:
+                final_info = info["final_info"]
+                if isinstance(final_info, (list, tuple)) and len(final_info) > 0:
+                    final_info = final_info[0]
+                if isinstance(final_info, dict):
+                    is_success = final_info.get("is_success", False)
+            elif "is_success" in info:
                 is_success = info["is_success"]
-            elif "final_info" in info and isinstance(info["final_info"], dict):
-                is_success = info["final_info"].get("is_success", False)
 
             # Convert is_success to scalar if it's an array
             success_value = is_success

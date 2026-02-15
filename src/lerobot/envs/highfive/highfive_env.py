@@ -48,10 +48,10 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_THRESHOLD = 0.03  # 3cm threshold for successful high-five
+CONTACT_THRESHOLD = 0.02  # 2cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
-PROXIMITY_SIGMA = 0.12  # 12cm Gaussian width for smooth proximity bonus
-PROXIMITY_SCALE = 2.0  # Peak magnitude of proximity bonus at distance=0
+REWARD_SCALE = 10.0  # Scale for exponential decay reward
+REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -179,7 +179,7 @@ class HighFiveEnv(gym.Env):
         # Robot base is at origin. Reachable bounds:
         #   x: [0.35, 0.55], y: [-0.40, +0.40], z: [0.20, 0.30]
         self._hand_base_pos = np.array([0.45, 0.0, 0.25])
-        self._hand_motion_amplitude = np.array([0.05, 0.05, 0.03])
+        self._hand_motion_amplitude = np.array([0.03, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
 
@@ -451,8 +451,8 @@ class HighFiveEnv(gym.Env):
         elif self.hand_motion_type == "random_walk":
             # Target-based random walk: pick a random target, move toward it smoothly,
             # then pick a new target on arrival. Large amplitude, controlled speed.
-            bounds_lo = np.array([0.35, -0.40, 0.20])
-            bounds_hi = np.array([0.55, 0.40, 0.30])
+            bounds_lo = np.array([0.20, -0.20, 0.15])
+            bounds_hi = np.array([0.40, 0.20, 0.30])
             if not hasattr(self, '_hand_walk_pos'):
                 self._hand_walk_pos = self._hand_base_pos.copy()
                 self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
@@ -532,16 +532,16 @@ class HighFiveEnv(gym.Env):
                 self._model.geom_size[geom_id] = self._original_hand_sizes[geom_id] * hand_scale
 
         # === Hand base position randomization ===
-        # Robot base at origin. Randomize within verified bounds: x[0.35,0.55], y[-0.40,0.40], z[0.20,0.30]
+        # Shoulder at (0.039, 0, 0.062), max reach ~0.41m. Keep within ~0.35m.
         base_hand_pos = np.array([0.45, 0.0, 0.25])
         offset = self._rng.uniform(
-            [-0.10, -0.20, -0.03],
-            [0.10, 0.20, 0.03]
+            [-0.10, -0.10, -0.03],
+            [0.05, 0.10, 0.03]
         )
         self._hand_base_pos = np.clip(
             base_hand_pos + offset,
-            [0.35, -0.40, 0.20],
-            [0.55, 0.40, 0.30],
+            [0.20, -0.20, 0.15],
+            [0.40, 0.20, 0.30],
         )
 
         # === Camera position/angle randomization ===
@@ -748,13 +748,10 @@ class HighFiveEnv(gym.Env):
 
         self._step_count += 1
 
-        # Compute reward
+        # Compute reward: 10 * exp(-5 * d)
+        # At 2cm: 9.05, at 10cm: 6.07, at 20cm: 3.68, at 40cm: 1.35
         distance = self._compute_distance()
-        reward = -10.0 * distance
-
-        # Smooth proximity bonus: Gaussian centered at distance=0
-        # Reaches ~1.0 at d=0, starts being felt around d=10cm
-        reward += PROXIMITY_SCALE * np.exp(-(distance ** 2) / (2 * PROXIMITY_SIGMA ** 2))
+        reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
 
         # Check for contact (success)
         is_contact = self._check_contact()
@@ -762,7 +759,7 @@ class HighFiveEnv(gym.Env):
             reward += CONTACT_BONUS
 
         # Check termination conditions
-        terminated = is_contact  # Episode ends on successful contact
+        terminated = False  # Never terminate early — agent should stay near target
         truncated = self._step_count >= self.episode_length
 
         # Get observation
