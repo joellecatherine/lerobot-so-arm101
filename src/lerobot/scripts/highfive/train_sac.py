@@ -128,13 +128,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=1e-4,
+        default=3e-4,
         help="Learning rate for all networks",
     )
     parser.add_argument(
         "--buffer_capacity",
         type=int,
-        default=50_000,
+        default=200_000,
         help="Replay buffer capacity (reduced for memory efficiency with images)",
     )
     parser.add_argument(
@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--episode_length",
         type=int,
-        default=200,
+        default=300,
         help="Maximum episode length",
     )
     parser.add_argument(
@@ -239,7 +239,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--utd_ratio",
         type=int,
-        default=1,
+        default=10,
         help="Update-to-data ratio: gradient updates per env step (1 for pixels, 10-20 for state)",
     )
     parser.add_argument(
