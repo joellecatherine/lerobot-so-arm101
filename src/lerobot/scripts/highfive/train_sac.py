@@ -595,7 +595,8 @@ def evaluate(
             success = info["is_success"]
             if hasattr(success, "__iter__") and not isinstance(success, (str, dict)):
                 success = success[0] if len(success) > 0 else False
-        total_successes.append(float(success))
+        success_val = success.item() if hasattr(success, "item") else float(success)
+        total_successes.append(success_val)
 
     policy.train()
 
