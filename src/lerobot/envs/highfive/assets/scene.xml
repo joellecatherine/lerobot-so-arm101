@@ -31,8 +31,8 @@
     <!-- Robot base is at origin; position hand relative to it -->
     <body name="hand_target" pos="0.45 0 0.25" euler="0 0 1.5708">
       <joint name="hand_free" type="free"/>
-      <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="0"/>
-      <geom name="thumb" type="capsule" size="0.01 0.02" pos="-0.044 0 -0.009" euler="0 -0.7854 0" material="mathand" contype="0" conaffinity="0"/>
+      <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="1"/>
+      <geom name="thumb" type="capsule" size="0.01 0.02" pos="-0.044 0 -0.009" euler="0 -0.7854 0" material="mathand" contype="0" conaffinity="1"/>
       <site name="hand_contact" pos="0 0.01 0" size="0.03" rgba="0 1 0 0.3"/>
     </body>
 
@@ -42,6 +42,13 @@
     <camera name="side" pos="0.8 0 0.5" euler="0 1.57 0" fovy="45"/>
 
   </worldbody>
+
+  <!-- ============== Contact pairs (soft, gentle contact) ============== -->
+  <contact>
+    <!-- Fist ↔ palm/thumb: high damping, compliant contact for gentle high-five -->
+    <pair geom1="fist" geom2="palm" solref="0.02 1.0" solimp="0.9 0.95 0.001" friction="0.5 0.5 0.005"/>
+    <pair geom1="fist" geom2="thumb" solref="0.02 1.0" solimp="0.9 0.95 0.001" friction="0.5 0.5 0.005"/>
+  </contact>
 
   <!-- ============== Sensors ============== -->
   <sensor>

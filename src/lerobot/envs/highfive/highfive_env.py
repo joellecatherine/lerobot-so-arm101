@@ -178,7 +178,7 @@ class HighFiveEnv(gym.Env):
         # Hand motion parameters (scaled by motion_freq_scale)
         # Robot base is at origin. Reachable bounds:
         #   x: [0.35, 0.55], y: [-0.40, +0.40], z: [0.20, 0.30]
-        self._hand_base_pos = np.array([0.45, 0.0, 0.25])
+        self._hand_base_pos = np.array([0.4, 0.0, 0.25])
         self._hand_motion_amplitude = np.array([0.03, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
