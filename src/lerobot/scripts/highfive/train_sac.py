@@ -128,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=3e-4,
+        default=1e-4,
         help="Learning rate for all networks",
     )
     parser.add_argument(
