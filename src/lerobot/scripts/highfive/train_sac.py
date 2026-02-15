@@ -443,7 +443,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
             ),
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(5 * n_frames,),
+                shape=(8 * n_frames,),  # 5 joints + 3 EE position
             ),
         }
 
@@ -455,7 +455,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
 
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 5 * n_frames,
+            "state_dim": 8 * n_frames,  # 5 joints + 3 EE position
             "pretrained": True,
             "freeze_backbones": not args.unfreeze_backbones,
             "fusion": args.fusion,

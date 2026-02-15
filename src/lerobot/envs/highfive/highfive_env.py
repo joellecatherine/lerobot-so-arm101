@@ -308,7 +308,7 @@ class HighFiveEnv(gym.Env):
                 "agent_pos": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(ACTION_DIM,),
+                    shape=(ACTION_DIM + 3,),  # 5 joints + 3 EE position
                     dtype=np.float64,
                 ),
             })
@@ -640,7 +640,10 @@ class HighFiveEnv(gym.Env):
                 obs["pixels"]["wrist"] = wrist_image
 
         if self.obs_type == "pixels_agent_pos":
-            obs["agent_pos"] = self._get_joint_positions()
+            obs["agent_pos"] = np.concatenate([
+                self._get_joint_positions(),  # 5 joint angles
+                self._get_ee_position(),      # 3 EE position (FK)
+            ])
 
         return obs
 
