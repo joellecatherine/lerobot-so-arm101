@@ -286,7 +286,11 @@ def create_dataset(args: argparse.Namespace):
     }
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists():
+        raise FileExistsError(
+            f"Output directory already exists: {output_dir}\n"
+            f"Remove it first with: rm -rf {output_dir}"
+        )
 
     dataset = LeRobotDataset.create(
         repo_id=args.repo_id,
