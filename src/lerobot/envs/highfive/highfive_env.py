@@ -50,7 +50,7 @@ ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.02  # 2cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
-REWARD_SCALE = 10.0  # Scale for exponential decay reward
+REWARD_SCALE = 1.0  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
