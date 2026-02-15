@@ -48,7 +48,7 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_THRESHOLD = 0.01  # 1cm threshold for successful high-five
+CONTACT_THRESHOLD = 0.03  # 3cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 PROXIMITY_SIGMA = 0.12  # 12cm Gaussian width for smooth proximity bonus
 PROXIMITY_SCALE = 2.0  # Peak magnitude of proximity bonus at distance=0
