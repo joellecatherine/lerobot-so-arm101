@@ -694,6 +694,7 @@ class HighFiveEnv(gym.Env):
         # Reset step counter
         self._step_count = 0
         self._episode_count += 1
+        self._episode_success = False  # Track if contact happened at any point
 
         # Reset random walk position
         if hasattr(self, '_hand_walk_pos'):
@@ -760,6 +761,7 @@ class HighFiveEnv(gym.Env):
         is_contact = self._check_contact()
         if is_contact:
             reward += CONTACT_BONUS
+            self._episode_success = True
 
         # Check termination conditions
         terminated = False  # Never terminate early — agent should stay near target
@@ -771,7 +773,7 @@ class HighFiveEnv(gym.Env):
         # Build info dict
         info = {
             "task_id": self.task_id,
-            "is_success": is_contact,
+            "is_success": self._episode_success,
             "distance": distance,
             "step": self._step_count,
         }
@@ -779,7 +781,7 @@ class HighFiveEnv(gym.Env):
         if terminated or truncated:
             info["final_info"] = {
                 "task_id": self.task_id,
-                "is_success": is_contact,
+                "is_success": self._episode_success,
                 "final_distance": distance,
                 "episode_length": self._step_count,
             }
