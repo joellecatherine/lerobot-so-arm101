@@ -47,7 +47,7 @@ except ImportError as e:
 ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
-DEFAULT_EPISODE_LENGTH = 200
+DEFAULT_EPISODE_LENGTH = 300
 CONTACT_THRESHOLD = 0.02  # 2cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 REWARD_SCALE = 1.0  # Scale for exponential decay reward

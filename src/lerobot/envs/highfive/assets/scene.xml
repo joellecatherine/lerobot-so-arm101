@@ -29,7 +29,7 @@
 
     <!-- ============== Hand Target ============== -->
     <!-- Robot base is at origin; position hand relative to it -->
-    <body name="hand_target" pos="0.45 0 0.25" euler="0 0 1.5708">
+    <body name="hand_target" pos="0.4 0 0.25" euler="0 0 1.5708">
       <joint name="hand_free" type="free"/>
       <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="1"/>
       <geom name="thumb" type="capsule" size="0.01 0.02" pos="-0.044 0 -0.009" euler="0 -0.7854 0" material="mathand" contype="0" conaffinity="1"/>
