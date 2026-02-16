@@ -133,7 +133,7 @@ class AlohaEnv(EnvConfig):
 class PushtEnv(EnvConfig):
     task: str | None = "PushT-v0"
     fps: int = 10
-    episode_length: int = 300
+    episode_length: int = 200
     obs_type: str = "pixels_agent_pos"
     render_mode: str = "rgb_array"
     visualization_width: int = 384
@@ -390,7 +390,7 @@ class MetaworldEnv(EnvConfig):
 @dataclass
 class IsaaclabArenaEnv(HubEnvConfig):
     hub_path: str = "nvidia/isaaclab-arena-envs"
-    episode_length: int = 300
+    episode_length: int = 200
     num_envs: int = 1
     embodiment: str | None = "gr1_pink"
     object: str | None = "power_drill"
@@ -465,11 +465,11 @@ class HighFiveEnvConfig(EnvConfig):
 
     task: str = "highfive-v0"
     fps: int = 30
-    episode_length: int = 100
+    episode_length: int = 200
     obs_type: str = "pixels_agent_pos"
     render_mode: str = "rgb_array"
-    observation_height: int = 224
-    observation_width: int = 224
+    observation_height: int = 84
+    observation_width: int = 84
     camera_name: str = "birdseye"
     hand_motion_type: str = "sinusoidal"  # "static", "random", "sinusoidal", "tracking"
     domain_randomization: bool = True
@@ -487,30 +487,30 @@ class HighFiveEnvConfig(EnvConfig):
         default_factory=lambda: {
             ACTION: ACTION,
             "agent_pos": OBS_STATE,
-            "pixels/image": f"{OBS_IMAGES}.image",
+            "pixels/birdseye": f"{OBS_IMAGES}.birdseye",
+            "pixels/wrist": f"{OBS_IMAGES}.wrist",
         }
     )
 
     def __post_init__(self):
+        img_shape = (self.observation_height, self.observation_width, 3)
         if self.obs_type == "pixels":
-            self.features["pixels/image"] = PolicyFeature(
-                type=FeatureType.VISUAL,
-                shape=(self.observation_height, self.observation_width, 3),
-            )
+            self.features["pixels/birdseye"] = PolicyFeature(type=FeatureType.VISUAL, shape=img_shape)
+            if not self.single_camera:
+                self.features["pixels/wrist"] = PolicyFeature(type=FeatureType.VISUAL, shape=img_shape)
         elif self.obs_type == "pixels_agent_pos":
             self.features["agent_pos"] = PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(5,),  # 5 joint positions
+                shape=(13,),  # 5 joint positions + 5 joint velocities + 3 EE position
             )
-            self.features["pixels/image"] = PolicyFeature(
-                type=FeatureType.VISUAL,
-                shape=(self.observation_height, self.observation_width, 3),
-            )
+            self.features["pixels/birdseye"] = PolicyFeature(type=FeatureType.VISUAL, shape=img_shape)
+            if not self.single_camera:
+                self.features["pixels/wrist"] = PolicyFeature(type=FeatureType.VISUAL, shape=img_shape)
         elif self.obs_type == "state":
-            # State-only: joint positions (5) + ee position (3) + hand position (3)
+            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
             self.features["state"] = PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(11,),
+                shape=(19,),
             )
         else:
             raise ValueError(f"Unsupported obs_type: {self.obs_type}")

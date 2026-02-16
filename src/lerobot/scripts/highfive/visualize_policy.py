@@ -63,10 +63,10 @@ def main():
 
     if use_state:
         input_features = {
-            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(11,)),
+            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(19,)),
         }
         encoder_config = {
-            "latent_dim": 256, "state_dim": 11,
+            "latent_dim": 256, "state_dim": 19,
             "encoder_type": "state", "single_camera": True,
         }
     else:
@@ -77,10 +77,10 @@ def main():
                 type=FeatureType.VISUAL, shape=(base_channels, obs_size, obs_size)),
             f"{OBS_IMAGES}.wrist": PolicyFeature(
                 type=FeatureType.VISUAL, shape=(base_channels, obs_size, obs_size)),
-            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(5,)),
+            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(13,)),
         }
         encoder_config = {
-            "latent_dim": 256, "state_dim": 5, "pretrained": True,
+            "latent_dim": 256, "state_dim": 13, "pretrained": True,
             "freeze_backbones": True, "fusion": "concat", "use_depth": False,
             "single_camera": False, "bev_depth_wrist_rgb": False,
             "birdseye_channels": base_channels, "wrist_channels": base_channels,

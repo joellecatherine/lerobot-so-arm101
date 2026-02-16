@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--episode_length",
         type=int,
-        default=300,
+        default=200,
         help="Maximum episode length",
     )
     parser.add_argument(
@@ -410,16 +410,17 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     use_state_only = args.obs_type == "state"
 
     if use_state_only:
-        # State-only: 11-dim state vector (5 joints + 3 ee pos + 3 hand pos), no images
+        # State-only: 19-dim state vector
+        # joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
         input_features = {
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(11,),
+                shape=(19,),
             ),
         }
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 11,
+            "state_dim": 19,
             "encoder_type": "state",
             "single_camera": True,
         }
@@ -443,7 +444,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
             ),
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(8 * n_frames,),  # 5 joints + 3 EE position
+                shape=(13 * n_frames,),  # 5 joint pos + 5 joint vel + 3 EE position
             ),
         }
 
@@ -455,7 +456,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
 
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 8 * n_frames,  # 5 joints + 3 EE position
+            "state_dim": 13 * n_frames,  # 5 joint pos + 5 joint vel + 3 EE position
             "pretrained": True,
             "freeze_backbones": not args.unfreeze_backbones,
             "fusion": args.fusion,

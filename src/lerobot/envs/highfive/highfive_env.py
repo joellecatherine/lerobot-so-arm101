@@ -47,11 +47,12 @@ except ImportError as e:
 ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
-DEFAULT_EPISODE_LENGTH = 300
+DEFAULT_EPISODE_LENGTH = 200
 CONTACT_THRESHOLD = 0.02  # 2cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 REWARD_SCALE = 1.0  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
+ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -114,8 +115,8 @@ class HighFiveEnv(gym.Env):
         episode_length: int = DEFAULT_EPISODE_LENGTH,
         obs_type: str = "pixels_agent_pos",
         render_mode: str = "rgb_array",
-        observation_width: int = 224,
-        observation_height: int = 224,
+        observation_width: int = 84,
+        observation_height: int = 84,
         visualization_width: int = 640,
         visualization_height: int = 480,
         camera_name: str = "birdseye",
@@ -171,6 +172,7 @@ class HighFiveEnv(gym.Env):
         self._load_model()
 
         # Initialize state tracking
+        self._max_episode_steps = episode_length
         self._step_count = 0
         self._episode_count = 0
         self._rng = np.random.default_rng(seed)
@@ -178,7 +180,7 @@ class HighFiveEnv(gym.Env):
         # Hand motion parameters (scaled by motion_freq_scale)
         # Robot base is at origin. Reachable bounds:
         #   x: [0.35, 0.55], y: [-0.40, +0.40], z: [0.20, 0.30]
-        self._hand_base_pos = np.array([0.4, 0.0, 0.25])
+        self._hand_base_pos = np.array([0.40, 0.0, 0.25])
         self._hand_motion_amplitude = np.array([0.03, 0.05, 0.03])
         self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale
         self._hand_motion_phase = np.zeros(3)
@@ -240,6 +242,11 @@ class HighFiveEnv(gym.Env):
             self._model, mujoco.mjtObj.mjOBJ_BODY, "hand_target"
         )
 
+        # Cache joint DOF addresses for velocity readout and gravity compensation
+        self._joint_dof_ids = [
+            self._model.jnt_dofadr[jid] for jid in self._joint_ids
+        ]
+
         # Get joint address for hand free joint
         self._hand_joint_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_JOINT, "hand_free"
@@ -251,15 +258,23 @@ class HighFiveEnv(gym.Env):
             self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper"
         )
 
+        # Geom IDs for physics-based contact detection
+        self._fist_geom_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_GEOM, "fist"
+        )
+        self._palm_geom_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_GEOM, "palm"
+        )
+
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
         if self.obs_type == "state":
-            # State-only: joint positions (5) + ee position (3) + hand position (3) = 11 dims
+            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3) = 19 dims
             self.observation_space = spaces.Dict({
                 "state": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(11,),
+                    shape=(19,),
                     dtype=np.float64,
                 ),
             })
@@ -308,7 +323,7 @@ class HighFiveEnv(gym.Env):
                 "agent_pos": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(ACTION_DIM + 3,),  # 5 joints + 3 EE position
+                    shape=(ACTION_DIM * 2 + 3,),  # 5 joint pos + 5 joint vel + 3 EE position
                     dtype=np.float64,
                 ),
             })
@@ -406,6 +421,44 @@ class HighFiveEnv(gym.Env):
             positions[i] = self._data.qpos[qpos_addr]
         return positions
 
+    def _get_joint_velocities(self) -> np.ndarray:
+        """Get current joint velocities."""
+        velocities = np.zeros(ACTION_DIM)
+        for i, dof_id in enumerate(self._joint_dof_ids):
+            velocities[i] = self._data.qvel[dof_id]
+        return velocities
+
+    def _get_hand_velocity(self) -> np.ndarray:
+        """Get hand target velocity (3D).
+
+        Returns non-zero values only for sinusoidal and random_walk motion types,
+        where the velocity is meaningful for prediction. Returns zeros otherwise.
+        """
+        if self.hand_motion_type == "sinusoidal":
+            # Analytical derivative of sinusoidal motion in m/step units.
+            # Position uses virtual time t = step * dt_step where dt_step = timestep * 10.
+            # d(pos)/d(step) = d(pos)/dt * dt_step
+            dt_step = self._model.opt.timestep * 10
+            t = self._step_count * dt_step
+            velocity = (
+                self._hand_motion_amplitude
+                * 2 * np.pi * self._hand_motion_freq
+                * np.cos(2 * np.pi * self._hand_motion_freq * t + self._hand_motion_phase)
+                * dt_step
+            )
+            return velocity
+        elif self.hand_motion_type == "random_walk":
+            # Velocity is the direction of movement at constant speed
+            if hasattr(self, '_hand_walk_pos') and hasattr(self, '_hand_walk_target'):
+                diff = self._hand_walk_target - self._hand_walk_pos
+                dist = np.linalg.norm(diff)
+                if dist > 0.01:
+                    move_speed = 0.002 * self.motion_freq_scale
+                    return diff / dist * move_speed
+            return np.zeros(3)
+        else:
+            return np.zeros(3)
+
     def _get_ee_position(self) -> np.ndarray:
         """Get end effector position."""
         return self._data.site_xpos[self._ee_site_id].copy()
@@ -421,9 +474,14 @@ class HighFiveEnv(gym.Env):
         return np.linalg.norm(ee_pos - hand_pos)
 
     def _check_contact(self) -> bool:
-        """Check if there's contact between gripper and hand."""
-        distance = self._compute_distance()
-        return distance < CONTACT_THRESHOLD
+        """Check if there's contact between fist and palm using MuJoCo physics."""
+        for i in range(self._data.ncon):
+            contact = self._data.contact[i]
+            g1, g2 = contact.geom1, contact.geom2
+            if (g1 == self._fist_geom_id and g2 == self._palm_geom_id) or \
+               (g1 == self._palm_geom_id and g2 == self._fist_geom_id):
+                return True
+        return False
 
     def _update_hand_position(self):
         """Update hand position based on motion type."""
@@ -457,7 +515,7 @@ class HighFiveEnv(gym.Env):
                 self._hand_walk_pos = self._hand_base_pos.copy()
                 self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
             # Move toward target at constant speed
-            move_speed = 0.006 * self.motion_freq_scale
+            move_speed = 0.002 * self.motion_freq_scale
             diff = self._hand_walk_target - self._hand_walk_pos
             dist = np.linalg.norm(diff)
             if dist < 0.01:
@@ -533,7 +591,7 @@ class HighFiveEnv(gym.Env):
 
         # === Hand base position randomization ===
         # Shoulder at (0.039, 0, 0.062), max reach ~0.41m. Keep within ~0.35m.
-        base_hand_pos = np.array([0.45, 0.0, 0.25])
+        base_hand_pos = np.array([0.40, 0.0, 0.25])
         offset = self._rng.uniform(
             [-0.10, -0.10, -0.03],
             [0.05, 0.10, 0.03]
@@ -595,11 +653,13 @@ class HighFiveEnv(gym.Env):
     def _get_observation(self) -> dict[str, Any]:
         """Get current observation with configurable cameras and depth."""
         if self.obs_type == "state":
-            # State-only: joint positions (5) + ee position (3) + hand position (3)
+            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3) = 19
             joint_pos = self._get_joint_positions()
+            joint_vel = self._get_joint_velocities()
             ee_pos = self._get_ee_position()
             hand_pos = self._get_hand_position()
-            return {"state": np.concatenate([joint_pos, ee_pos, hand_pos])}
+            hand_vel = self._get_hand_velocity()
+            return {"state": np.concatenate([joint_pos, joint_vel, ee_pos, hand_pos, hand_vel])}
 
         if self.bev_depth_wrist_rgb:
             # Asymmetric mode: BEV depth-only, Wrist RGB
@@ -641,8 +701,9 @@ class HighFiveEnv(gym.Env):
 
         if self.obs_type == "pixels_agent_pos":
             obs["agent_pos"] = np.concatenate([
-                self._get_joint_positions(),  # 5 joint angles
-                self._get_ee_position(),      # 3 EE position (FK)
+                self._get_joint_positions(),   # 5 joint angles
+                self._get_joint_velocities(),  # 5 joint velocities
+                self._get_ee_position(),       # 3 EE position (FK)
             ])
 
         return obs
@@ -695,6 +756,7 @@ class HighFiveEnv(gym.Env):
         self._step_count = 0
         self._episode_count += 1
         self._episode_success = False  # Track if contact happened at any point
+        self._prev_action = np.zeros(ACTION_DIM)  # For action rate penalty
 
         # Reset random walk position
         if hasattr(self, '_hand_walk_pos'):
@@ -748,6 +810,10 @@ class HighFiveEnv(gym.Env):
         # Step simulation (multiple physics steps per control step)
         n_substeps = 4
         for _ in range(n_substeps):
+            # Gravity compensation: apply bias forces (gravity + Coriolis) for arm joints
+            # so the position controller only needs to handle the task
+            for dof_id in self._joint_dof_ids:
+                self._data.qfrc_applied[dof_id] = self._data.qfrc_bias[dof_id]
             mujoco.mj_step(self._model, self._data)
 
         self._step_count += 1
@@ -756,6 +822,11 @@ class HighFiveEnv(gym.Env):
         # At 2cm: 9.05, at 10cm: 6.07, at 20cm: 3.68, at 40cm: 1.35
         distance = self._compute_distance()
         reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
+
+        # Action rate penalty: penalize jerky movements
+        action_diff = action - self._prev_action
+        reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
+        self._prev_action = action.copy()
 
         # Check for contact (success)
         is_contact = self._check_contact()

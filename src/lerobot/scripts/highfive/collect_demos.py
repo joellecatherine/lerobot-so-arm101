@@ -140,16 +140,17 @@ def load_expert_policy(checkpoint_path: str, device: str):
     if not model_file.exists():
         raise FileNotFoundError(f"Model file not found: {model_file}")
 
-    # State-only expert: 11-dim input (5 joints + 3 EE + 3 hand pos)
+    # State-only expert: 19-dim input
+    # joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
     input_features = {
-        OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(11,)),
+        OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(19,)),
     }
     output_features = {
         ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
     }
     encoder_config = {
         "latent_dim": 256,
-        "state_dim": 11,
+        "state_dim": 19,
         "encoder_type": "state",
         "single_camera": True,
     }
@@ -204,18 +205,20 @@ def create_env(args: argparse.Namespace):
 
 
 def get_expert_state(env) -> np.ndarray:
-    """Extract the full 11-dim state vector for the expert from the environment.
+    """Extract the full 19-dim state vector for the expert from the environment.
 
     The expert was trained with obs_type="state" which provides:
-        [joint_pos(5), ee_pos(3), hand_pos(3)] = 11 dims
+        [joint_pos(5), joint_vel(5), ee_pos(3), hand_pos(3), hand_vel(3)] = 19 dims
 
     Returns:
-        11-dim state vector as numpy array
+        19-dim state vector as numpy array
     """
-    joint_pos = env._get_joint_positions()  # 5
-    ee_pos = env._get_ee_position()  # 3
-    hand_pos = env._get_hand_position()  # 3
-    return np.concatenate([joint_pos, ee_pos, hand_pos])
+    joint_pos = env._get_joint_positions()   # 5
+    joint_vel = env._get_joint_velocities()  # 5
+    ee_pos = env._get_ee_position()          # 3
+    hand_pos = env._get_hand_position()      # 3
+    hand_vel = env._get_hand_velocity()      # 3
+    return np.concatenate([joint_pos, joint_vel, ee_pos, hand_pos, hand_vel])
 
 
 def expert_select_action(policy, state: np.ndarray, device: str) -> np.ndarray:
@@ -268,10 +271,12 @@ def create_dataset(args: argparse.Namespace):
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (8,),
+            "shape": (13,),
             "names": [
                 "shoulder_pan", "shoulder_lift", "elbow_flex",
                 "wrist_flex", "wrist_roll",
+                "shoulder_pan_vel", "shoulder_lift_vel", "elbow_flex_vel",
+                "wrist_flex_vel", "wrist_roll_vel",
                 "ee_x", "ee_y", "ee_z",
             ],
         },
@@ -340,6 +345,9 @@ def collect_demos(args: argparse.Namespace):
         obs, info = env.reset()
         episode_frames = []
         done = False
+        contact_made = False
+        post_contact_frames = 0
+        post_contact_limit = 15
 
         while not done:
             # Get full state for expert decision-making
@@ -349,18 +357,30 @@ def collect_demos(args: argparse.Namespace):
             action = expert_select_action(policy, expert_state, args.device)
 
             # Record frame: pixel observations + agent_pos + action
-            frame = {
-                "observation.images.birdseye": obs["pixels"]["birdseye"],
-                "observation.images.wrist": obs["pixels"]["wrist"],
-                "observation.state": obs["agent_pos"].astype(np.float32),
-                "action": action.astype(np.float32),
-                "task": "high-five with moving hand target",
-            }
-            episode_frames.append(frame)
+            # Keep recording for a few frames after contact for smooth IL trajectories
+            if not contact_made or post_contact_frames < post_contact_limit:
+                frame = {
+                    "observation.images.birdseye": obs["pixels"]["birdseye"],
+                    "observation.images.wrist": obs["pixels"]["wrist"],
+                    "observation.state": obs["agent_pos"].astype(np.float32),
+                    "action": action.astype(np.float32),
+                    "task": "high-five with moving hand target",
+                }
+                episode_frames.append(frame)
+                if contact_made:
+                    post_contact_frames += 1
 
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
+
+            # Track first contact
+            if not contact_made and info.get("is_success", False):
+                contact_made = True
+
+            # Stop early once post-contact frames are collected
+            if contact_made and post_contact_frames >= post_contact_limit:
+                break
 
         # Check success
         is_success = info.get("is_success", False)
