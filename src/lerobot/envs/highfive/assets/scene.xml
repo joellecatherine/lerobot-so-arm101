@@ -47,7 +47,10 @@
   <!-- Explicit pair: fist sphere ↔ palm. Bypasses contype/conaffinity so
        other robot geoms stay collision-free with the table/hand. -->
   <contact>
-    <pair geom1="fist" geom2="palm"/>
+    <!-- solref: stiff + damped contact. solimp: near-rigid. margin: forces start 5mm before penetration -->
+    <pair geom1="fist" geom2="palm" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
+    <pair geom1="gripper_collision" geom2="palm" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
+    <pair geom1="gripper_collision" geom2="thumb" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
   </contact>
 
   <!-- ============== Sensors ============== -->

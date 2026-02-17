@@ -48,11 +48,11 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_THRESHOLD = 0.02  # 2cm threshold for successful high-five
 CONTACT_BONUS = 10.0  # Bonus reward for contact
 REWARD_SCALE = 1.0  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
+CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -265,6 +265,16 @@ class HighFiveEnv(gym.Env):
         self._palm_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "palm"
         )
+        self._gripper_col_geom_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_GEOM, "gripper_collision"
+        )
+        self._thumb_geom_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_GEOM, "thumb"
+        )
+        # All hand geom IDs for contact force computation
+        self._hand_geom_ids = {self._palm_geom_id, self._thumb_geom_id}
+        # All gripper geom IDs
+        self._gripper_geom_ids = {self._fist_geom_id, self._gripper_col_geom_id}
 
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
@@ -482,6 +492,22 @@ class HighFiveEnv(gym.Env):
                (g1 == self._palm_geom_id and g2 == self._fist_geom_id):
                 return True
         return False
+
+    def _get_contact_force(self) -> float:
+        """Get total contact force between gripper and hand geoms (in Newtons)."""
+        total_force = 0.0
+        for i in range(self._data.ncon):
+            contact = self._data.contact[i]
+            g1, g2 = contact.geom1, contact.geom2
+            # Check if this contact is between any gripper geom and any hand geom
+            is_gripper_hand = (g1 in self._gripper_geom_ids and g2 in self._hand_geom_ids) or \
+                              (g1 in self._hand_geom_ids and g2 in self._gripper_geom_ids)
+            if is_gripper_hand:
+                # Extract 6D contact force (3 normal + 3 friction)
+                force = np.zeros(6)
+                mujoco.mj_contactForce(self._model, self._data, i, force)
+                total_force += np.linalg.norm(force)
+        return total_force
 
     def _update_hand_position(self):
         """Update hand position based on motion type."""
@@ -809,11 +835,15 @@ class HighFiveEnv(gym.Env):
 
         # Step simulation (multiple physics steps per control step)
         n_substeps = 4
+        hand_qvel_addr = self._model.jnt_dofadr[self._hand_joint_id]
         for _ in range(n_substeps):
             # Gravity compensation: apply bias forces (gravity + Coriolis) for arm joints
             # so the position controller only needs to handle the task
             for dof_id in self._joint_dof_ids:
                 self._data.qfrc_applied[dof_id] = self._data.qfrc_bias[dof_id]
+            # Pin hand in place: zero velocity each substep so contact forces
+            # don't push it away between substeps
+            self._data.qvel[hand_qvel_addr:hand_qvel_addr + 6] = 0.0
             mujoco.mj_step(self._model, self._data)
 
         self._step_count += 1
@@ -827,6 +857,10 @@ class HighFiveEnv(gym.Env):
         action_diff = action - self._prev_action
         reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
         self._prev_action = action.copy()
+
+        # Contact force penalty: encourage gentle approach
+        contact_force = self._get_contact_force()
+        reward -= CONTACT_FORCE_PENALTY * contact_force
 
         # Check for contact (success)
         is_contact = self._check_contact()
