@@ -858,10 +858,6 @@ class HighFiveEnv(gym.Env):
         reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
         self._prev_action = action.copy()
 
-        # Contact force penalty: encourage gentle approach
-        contact_force = self._get_contact_force()
-        reward -= CONTACT_FORCE_PENALTY * contact_force
-
         # Check for contact (success)
         is_contact = self._check_contact()
         if is_contact:
