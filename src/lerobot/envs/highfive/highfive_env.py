@@ -57,7 +57,7 @@ CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
     "neutral": np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
-    "folded": np.array([0.0, -1.5, 1.5, 1.0, 0.0]),
+    "folded": np.array([0.0, -1.5, 1.5, 0.0, 0.0]),
 }
 
 
@@ -128,6 +128,12 @@ class HighFiveEnv(gym.Env):
         single_camera: bool = False,
         bev_depth_wrist_rgb: bool = False,
         start_pose: str = "folded",
+        randomize_hand_position: bool = False,
+        force_disturbances: bool = False,
+        force_disturbance_max: float = 30.0,
+        force_disturbance_interval: tuple[int, int] = (30, 100),
+        force_disturbance_duration: int = 15,
+        force_kicks_per_episode: int = 1,
     ):
         """Initialize the High-Five environment.
 
@@ -148,6 +154,11 @@ class HighFiveEnv(gym.Env):
             use_depth: Add depth channel to observations (RGBD)
             single_camera: Use only birdseye camera
             bev_depth_wrist_rgb: Asymmetric mode - BEV depth-only + Wrist RGB
+            randomize_hand_position: Randomize hand base position each episode
+            force_disturbances: Apply random Cartesian force kicks to arm bodies
+            force_disturbance_max: Max force magnitude (N) applied to arm body
+            force_disturbance_interval: (min, max) steps between kicks
+            force_disturbance_duration: How many steps each kick lasts
         """
         super().__init__()
 
@@ -167,6 +178,12 @@ class HighFiveEnv(gym.Env):
         self.single_camera = single_camera
         self.bev_depth_wrist_rgb = bev_depth_wrist_rgb
         self.start_pose = start_pose
+        self.randomize_hand_position = randomize_hand_position
+        self.force_disturbances = force_disturbances
+        self.force_disturbance_max = force_disturbance_max
+        self.force_disturbance_interval = force_disturbance_interval
+        self.force_disturbance_duration = force_disturbance_duration
+        self.force_kicks_per_episode = force_kicks_per_episode
 
         # Load MuJoCo model
         self._load_model()
@@ -268,13 +285,25 @@ class HighFiveEnv(gym.Env):
         self._gripper_col_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "gripper_collision"
         )
-        self._thumb_geom_id = mujoco.mj_name2id(
-            self._model, mujoco.mjtObj.mjOBJ_GEOM, "thumb"
-        )
         # All hand geom IDs for contact force computation
-        self._hand_geom_ids = {self._palm_geom_id, self._thumb_geom_id}
+        self._hand_geom_ids = {self._palm_geom_id}
         # All gripper geom IDs
         self._gripper_geom_ids = {self._fist_geom_id, self._gripper_col_geom_id}
+        # Arm body IDs for xfrc_applied force disturbances
+        self._arm_body_names = ["shoulder", "upper_arm", "lower_arm", "wrist", "gripper"]
+        self._arm_body_ids = [
+            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, name)
+            for name in self._arm_body_names
+        ]
+        # Visual kick indicator geom IDs (one per body, group 4 = camera-hidden)
+        self._kick_indicator_ids = {
+            name: mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, f"kick_ind_{jname}")
+            for name, jname in zip(
+                self._arm_body_names,
+                ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"],
+            )
+        }
+        self._kick_active_visual = False
 
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
@@ -466,6 +495,14 @@ class HighFiveEnv(gym.Env):
                     move_speed = 0.002 * self.motion_freq_scale
                     return diff / dist * move_speed
             return np.zeros(3)
+        elif self.hand_motion_type == "move_and_hold":
+            move_steps = 80
+            if self._step_count < move_steps and hasattr(self, '_hold_target'):
+                # Derivative of smoothstep: 6*a*(1-a) / move_steps * displacement
+                alpha = self._step_count / move_steps
+                d_alpha = 6 * alpha * (1 - alpha) / move_steps
+                return d_alpha * (self._hold_target - self._hand_base_pos)
+            return np.zeros(3)
         else:
             return np.zeros(3)
 
@@ -551,6 +588,23 @@ class HighFiveEnv(gym.Env):
                 self._hand_walk_pos += diff / dist * move_speed
             target_pos = self._hand_walk_pos.copy()
 
+        elif self.hand_motion_type == "move_and_hold":
+            # Hand starts at base, moves to a random target over ~30 steps, then holds.
+            move_steps = 80
+            if not hasattr(self, '_hold_target'):
+                # Pick random target within reachable bounds
+                bounds_lo = np.array([0.25, -0.25, 0.15])
+                bounds_hi = np.array([0.45,  0.25, 0.30])
+                self._hold_target = self._rng.uniform(bounds_lo, bounds_hi)
+            if self._step_count < move_steps:
+                # Smooth interpolation from base to target
+                alpha = self._step_count / move_steps
+                # Smoothstep for natural motion
+                alpha = alpha * alpha * (3 - 2 * alpha)
+                target_pos = self._hand_base_pos + alpha * (self._hold_target - self._hand_base_pos)
+            else:
+                target_pos = self._hold_target.copy()
+
         elif self.hand_motion_type == "tracking":
             # Move toward/away from robot (for difficulty scaling)
             ee_pos = self._get_ee_position()
@@ -597,7 +651,7 @@ class HighFiveEnv(gym.Env):
 
         hand_geom_ids = [
             mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, name)
-            for name in ["palm", "fingers", "thumb"]
+            for name in ["palm"]
         ]
         for geom_id in hand_geom_ids:
             if geom_id >= 0:
@@ -638,16 +692,6 @@ class HighFiveEnv(gym.Env):
             # Randomize position (±5cm in x,y, ±10cm in z)
             pos_noise = self._rng.uniform([-0.05, -0.05, -0.10], [0.05, 0.05, 0.10])
             self._model.cam_pos[birdseye_cam_id] = self._original_birdseye_pos + pos_noise
-
-        # Wrist camera randomization (smaller range since it's mounted)
-        wrist_cam_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, "wrist")
-        if wrist_cam_id >= 0:
-            # Store original pose on first call
-            if not hasattr(self, '_original_wrist_pos'):
-                self._original_wrist_pos = self._model.cam_pos[wrist_cam_id].copy()
-            # Small randomization to simulate mounting variation (±1cm)
-            pos_noise = self._rng.uniform(-0.01, 0.01, size=3)
-            self._model.cam_pos[wrist_cam_id] = self._original_wrist_pos + pos_noise
 
         # === Lighting randomization ===
         # Randomize light positions and intensities
@@ -759,6 +803,25 @@ class HighFiveEnv(gym.Env):
         # Apply domain randomization
         self._apply_domain_randomization()
 
+        # Always randomize motion parameters (even without domain randomization)
+        self._hand_motion_phase = self._rng.uniform(0, 2 * np.pi, size=3)
+        self._hand_motion_freq = np.array([0.5, 0.3, 0.2]) * self.motion_freq_scale * self._rng.uniform(
+            0.8, 1.2, size=3
+        )
+
+        # Randomize hand base position (independent of domain randomization)
+        if self.randomize_hand_position and not self.domain_randomization:
+            base_hand_pos = np.array([0.40, 0.0, 0.25])
+            offset = self._rng.uniform(
+                [-0.10, -0.10, -0.03],
+                [0.05, 0.10, 0.03]
+            )
+            self._hand_base_pos = np.clip(
+                base_hand_pos + offset,
+                [0.20, -0.20, 0.15],
+                [0.40, 0.20, 0.30],
+            )
+
         # Set robot starting position
         base_qpos = START_POSES[self.start_pose]
         if self.domain_randomization:
@@ -784,11 +847,21 @@ class HighFiveEnv(gym.Env):
         self._episode_success = False  # Track if contact happened at any point
         self._prev_action = np.zeros(ACTION_DIM)  # For action rate penalty
 
-        # Reset random walk position
+        # Reset force disturbance state
+        if self.force_disturbances:
+            self._next_kick_step = self._rng.integers(*self.force_disturbance_interval)
+            self._kick_force = np.zeros(3)  # 3D Cartesian force
+            self._kick_body_idx = 0  # index into _arm_body_ids
+            self._kick_steps_remaining = 0
+            self._kicks_fired = 0
+
+        # Reset motion state
         if hasattr(self, '_hand_walk_pos'):
             del self._hand_walk_pos
         if hasattr(self, '_hand_walk_target'):
             del self._hand_walk_target
+        if hasattr(self, '_hold_target'):
+            del self._hold_target
 
         observation = self._get_observation()
         info = {
@@ -833,6 +906,53 @@ class HighFiveEnv(gym.Env):
         # Update hand position
         self._update_hand_position()
 
+        # Handle force disturbance kicks (Cartesian forces on arm bodies)
+        if self.force_disturbances:
+            if self._kick_steps_remaining > 0:
+                self._kick_steps_remaining -= 1
+                if self._kick_steps_remaining == 0:
+                    # Kick ended, hide indicator
+                    for gid in self._kick_indicator_ids.values():
+                        self._model.geom_rgba[gid] = [0, 0, 0, 0]
+                    self._kick_active_visual = False
+            elif self._step_count >= self._next_kick_step and self._kicks_fired < self.force_kicks_per_episode:
+                # Start a new kick: random Cartesian force on a random arm body
+                self._kick_body_idx = self._rng.integers(len(self._arm_body_ids))
+                # Random 3D force direction with random magnitude
+                direction = self._rng.standard_normal(3)
+                direction /= np.linalg.norm(direction) + 1e-8
+                magnitude = self._rng.uniform(0.3, 1.0) * self.force_disturbance_max
+                self._kick_force = direction * magnitude
+                self._kick_steps_remaining = self.force_disturbance_duration
+                self._kicks_fired += 1
+                # Visual indicator: show red cylinder on kicked body, oriented along force
+                # Compute quaternion that rotates Z-axis (cylinder long axis) to force direction
+                z = np.array([0.0, 0.0, 1.0])
+                d = direction  # unit vector
+                cross = np.cross(z, d)
+                dot = np.dot(z, d)
+                if np.linalg.norm(cross) < 1e-6:
+                    # Parallel or anti-parallel
+                    quat = np.array([1.0, 0.0, 0.0, 0.0]) if dot > 0 else np.array([0.0, 1.0, 0.0, 0.0])
+                else:
+                    # quat = [w, x, y, z] where w = 1 + dot, (x,y,z) = cross
+                    quat = np.array([1.0 + dot, cross[0], cross[1], cross[2]])
+                    quat /= np.linalg.norm(quat)
+                body_name = self._arm_body_names[self._kick_body_idx]
+                for name, gid in self._kick_indicator_ids.items():
+                    if name == body_name:
+                        intensity = min(magnitude / self.force_disturbance_max, 1.0)
+                        self._model.geom_rgba[gid] = [1.0, 0.0, 0.0, intensity]
+                        self._model.geom_quat[gid] = quat
+                    else:
+                        self._model.geom_rgba[gid] = [0, 0, 0, 0]
+                self._kick_active_visual = True
+                print(f"  KICK #{self._kicks_fired}: body={body_name} mag={magnitude:.1f}N dir={direction}")
+                # Schedule next kick
+                self._next_kick_step = self._step_count + self._rng.integers(
+                    *self.force_disturbance_interval
+                )
+
         # Step simulation (multiple physics steps per control step)
         n_substeps = 4
         hand_qvel_addr = self._model.jnt_dofadr[self._hand_joint_id]
@@ -841,10 +961,17 @@ class HighFiveEnv(gym.Env):
             # so the position controller only needs to handle the task
             for dof_id in self._joint_dof_ids:
                 self._data.qfrc_applied[dof_id] = self._data.qfrc_bias[dof_id]
+            # Apply Cartesian force disturbance to arm body via xfrc_applied
+            if self.force_disturbances and self._kick_steps_remaining > 0:
+                body_id = self._arm_body_ids[self._kick_body_idx]
+                self._data.xfrc_applied[body_id, :3] = self._kick_force
             # Pin hand in place: zero velocity each substep so contact forces
             # don't push it away between substeps
             self._data.qvel[hand_qvel_addr:hand_qvel_addr + 6] = 0.0
             mujoco.mj_step(self._model, self._data)
+        # Clear xfrc_applied after substeps so it doesn't persist
+        if self.force_disturbances:
+            self._data.xfrc_applied[:] = 0.0
 
         self._step_count += 1
 
@@ -868,8 +995,23 @@ class HighFiveEnv(gym.Env):
         terminated = False  # Never terminate early — agent should stay near target
         truncated = self._step_count >= self.episode_length
 
+        # Restore floor color before camera capture so kick indicator
+        # is only visible in the human viewer, not in training images
+        # Hide kick indicators before camera capture (they're group 4 so
+        # already hidden from cameras, but be safe)
+        kick_rgbas_backup = None
+        if self._kick_active_visual:
+            kick_rgbas_backup = {gid: self._model.geom_rgba[gid].copy() for gid in self._kick_indicator_ids.values()}
+            for gid in self._kick_indicator_ids.values():
+                self._model.geom_rgba[gid] = [0, 0, 0, 0]
+
         # Get observation
         observation = self._get_observation()
+
+        # Restore kick indicators for human viewer
+        if kick_rgbas_backup is not None:
+            for gid, rgba in kick_rgbas_backup.items():
+                self._model.geom_rgba[gid] = rgba
 
         # Build info dict
         info = {
@@ -905,6 +1047,8 @@ class HighFiveEnv(gym.Env):
                 self._viewer = mujoco_viewer.launch_passive(
                     self._model, self._data
                 )
+                # Enable geom group 4 in viewer so kick indicators are visible
+                self._viewer.opt.geomgroup[4] = 1
             self._viewer.sync()
             return None
         return None

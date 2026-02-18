@@ -161,7 +161,7 @@ def parse_args() -> argparse.Namespace:
         "--hand_motion_type",
         type=str,
         default="random_walk",
-        choices=["static", "random", "sinusoidal", "random_walk", "tracking"],
+        choices=["static", "random", "sinusoidal", "random_walk", "move_and_hold", "tracking"],
         help="Type of hand target motion",
     )
     parser.add_argument(
@@ -210,6 +210,22 @@ def parse_args() -> argparse.Namespace:
         default="folded",
         choices=["folded", "neutral"],
         help="Starting pose for robot arm",
+    )
+    parser.add_argument(
+        "--randomize_hand_position",
+        action="store_true",
+        help="Randomize hand base position each episode (for state-based training without domain rand)",
+    )
+    parser.add_argument(
+        "--force_disturbances",
+        action="store_true",
+        help="Apply random force kicks to arm joints during training",
+    )
+    parser.add_argument(
+        "--force_disturbance_max",
+        type=float,
+        default=10.0,
+        help="Max Cartesian force magnitude on arm body (N)",
     )
     parser.add_argument(
         "--bev_depth_wrist_rgb",
@@ -331,6 +347,11 @@ def parse_args() -> argparse.Namespace:
         help="Enable visualization during training",
     )
     parser.add_argument(
+        "--show_cameras",
+        action="store_true",
+        help="Show camera feeds in OpenCV window during training (requires --render)",
+    )
+    parser.add_argument(
         "--resume",
         type=str,
         default=None,
@@ -385,6 +406,9 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         single_camera=single_camera,
         bev_depth_wrist_rgb=args.bev_depth_wrist_rgb,
         start_pose=args.start_pose,
+        randomize_hand_position=args.randomize_hand_position,
+        force_disturbances=args.force_disturbances,
+        force_disturbance_max=args.force_disturbance_max,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
@@ -738,6 +762,28 @@ def train(args: argparse.Namespace):
         # Render if visualization enabled
         if args.render:
             env.call("render")
+            if args.show_cameras:
+                from PIL import Image
+                # Get camera images — either from obs or by rendering directly
+                frames = []
+                if "pixels" in obs:
+                    pixels = obs["pixels"]
+                    for cam_name in ["birdseye", "wrist"]:
+                        if cam_name in pixels:
+                            img = pixels[cam_name]
+                            if img.ndim == 4:
+                                img = img[0]  # remove batch dim
+                            frames.append(img)
+                else:
+                    # State mode: render cameras from the underlying env
+                    inner_env = env.envs[0]
+                    for cam_name in ["birdseye", "wrist"]:
+                        frames.append(inner_env._get_camera_image(camera_name=cam_name))
+                if frames:
+                    # Scale up and save to /tmp for live preview
+                    scaled = [np.repeat(np.repeat(f, 3, axis=0), 3, axis=1) for f in frames]
+                    combined = np.hstack(scaled)
+                    Image.fromarray(combined).save("/tmp/highfive_cameras.png")
 
         episode_reward += reward.sum()
         episode_length += 1

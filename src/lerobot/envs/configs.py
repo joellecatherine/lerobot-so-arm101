@@ -478,6 +478,9 @@ class HighFiveEnvConfig(EnvConfig):
     single_camera: bool = False  # Use only birdseye camera
     bev_depth_wrist_rgb: bool = False  # Asymmetric: BEV depth-only + Wrist RGB
     start_pose: str = "folded"  # Starting pose: "folded" or "neutral"
+    randomize_hand_position: bool = False  # Randomize hand base pos each episode
+    force_disturbances: bool = False  # Apply random force kicks to arm
+    force_disturbance_max: float = 10.0  # Max Cartesian force on arm body (N)
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -530,4 +533,7 @@ class HighFiveEnvConfig(EnvConfig):
             "single_camera": self.single_camera,
             "bev_depth_wrist_rgb": self.bev_depth_wrist_rgb,
             "start_pose": self.start_pose,
+            "randomize_hand_position": self.randomize_hand_position,
+            "force_disturbances": self.force_disturbances,
+            "force_disturbance_max": self.force_disturbance_max,
         }
