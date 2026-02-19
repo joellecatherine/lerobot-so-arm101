@@ -682,31 +682,11 @@ class HighFiveEnv(gym.Env):
         if not self.domain_randomization:
             return
 
-        # === Hand color randomization (full skin tone range) ===
-        # Skin tone palette from light to dark
-        skin_tones = [
-            [0.96, 0.87, 0.80],  # very light
-            [0.94, 0.82, 0.70],  # light
-            [0.90, 0.75, 0.60],  # light-medium
-            [0.82, 0.64, 0.50],  # medium
-            [0.70, 0.50, 0.38],  # medium-dark
-            [0.55, 0.38, 0.28],  # dark
-            [0.40, 0.28, 0.20],  # very dark
-        ]
-        # Select random skin tone and add noise
-        base_color = np.array(skin_tones[self._rng.integers(len(skin_tones))])
-        noise = self._rng.uniform(-0.05, 0.05, size=3)
-        hand_color = np.clip(base_color + noise, 0, 1)
-
+        # === Hand size randomization (0.8x to 1.2x) ===
         hand_geom_ids = [
             mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, name)
             for name in ["palm"]
         ]
-        for geom_id in hand_geom_ids:
-            if geom_id >= 0:
-                self._model.geom_rgba[geom_id, :3] = hand_color
-
-        # === Hand size randomization (0.8x to 1.2x) ===
         hand_scale = self._rng.uniform(0.8, 1.2)
         for geom_id in hand_geom_ids:
             if geom_id >= 0:

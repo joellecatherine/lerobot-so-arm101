@@ -38,7 +38,7 @@
     </body>
 
     <!-- ============== Cameras ============== -->
-    <camera name="birdseye" pos="0.25 0 0.7" euler="0 0 0" fovy="60"/>
+    <camera name="birdseye" pos="0.25 0 1.0" euler="0 0 0" fovy="60"/>
     <camera name="birdseye_angled" pos="0.3 -0.3 1.0" euler="0.3 0.3 0" fovy="50"/>
     <camera name="side" pos="0.8 0 0.5" euler="0 1.57 0" fovy="45"/>
 
