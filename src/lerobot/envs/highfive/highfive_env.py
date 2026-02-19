@@ -51,11 +51,11 @@ DEFAULT_EPISODE_LENGTH = 200
 CONTACT_BONUS = 80.0  # Base bonus reward for contact (decays with timestep)
 CONTACT_BONUS_GAMMA = 0.99  # Decay rate for contact bonus per timestep
 CONTACT_TERMINATE_STEPS = 0  # Steps to continue after first contact before terminating
-REWARD_SCALE = 0.4  # Scale for exponential decay reward
+REWARD_SCALE = 0.1  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
-FACING_REWARD_SCALE = 0.1  # Scale for facing reward (gripper pointing toward palm)
+FACING_REWARD_SCALE = 0.05  # Scale for facing reward (gripper pointing toward palm)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
