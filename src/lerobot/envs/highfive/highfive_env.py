@@ -134,6 +134,7 @@ class HighFiveEnv(gym.Env):
         force_disturbance_interval: tuple[int, int] = (30, 100),
         force_disturbance_duration: int = 15,
         force_kicks_per_episode: int = 1,
+        closing_reward: bool = False,
     ):
         """Initialize the High-Five environment.
 
@@ -184,6 +185,7 @@ class HighFiveEnv(gym.Env):
         self.force_disturbance_interval = force_disturbance_interval
         self.force_disturbance_duration = force_disturbance_duration
         self.force_kicks_per_episode = force_kicks_per_episode
+        self.closing_reward = closing_reward
 
         # Load MuJoCo model
         self._load_model()
@@ -863,11 +865,13 @@ class HighFiveEnv(gym.Env):
         if hasattr(self, '_hold_target'):
             del self._hold_target
 
+        self._prev_distance = self._compute_distance()
+
         observation = self._get_observation()
         info = {
             "task_id": self.task_id,
             "is_success": False,
-            "distance": self._compute_distance(),
+            "distance": self._prev_distance,
         }
 
         return observation, info
@@ -979,6 +983,12 @@ class HighFiveEnv(gym.Env):
         # At 2cm: 9.05, at 10cm: 6.07, at 20cm: 3.68, at 40cm: 1.35
         distance = self._compute_distance()
         reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
+
+        # Closing velocity reward: reward for reducing distance to target
+        if self.closing_reward:
+            closing = max(0.0, self._prev_distance - distance)
+            reward += 5.0 * closing
+        self._prev_distance = distance
 
         # Action rate penalty: penalize jerky movements
         action_diff = action - self._prev_action

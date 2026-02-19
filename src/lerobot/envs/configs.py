@@ -481,6 +481,7 @@ class HighFiveEnvConfig(EnvConfig):
     randomize_hand_position: bool = False  # Randomize hand base pos each episode
     force_disturbances: bool = False  # Apply random force kicks to arm
     force_disturbance_max: float = 10.0  # Max Cartesian force on arm body (N)
+    closing_reward: bool = False  # Reward for reducing distance (helps with moving targets)
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -536,4 +537,5 @@ class HighFiveEnvConfig(EnvConfig):
             "randomize_hand_position": self.randomize_hand_position,
             "force_disturbances": self.force_disturbances,
             "force_disturbance_max": self.force_disturbance_max,
+            "closing_reward": self.closing_reward,
         }

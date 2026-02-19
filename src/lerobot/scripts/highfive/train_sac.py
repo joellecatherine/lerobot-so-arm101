@@ -228,6 +228,11 @@ def parse_args() -> argparse.Namespace:
         help="Max Cartesian force magnitude on arm body (N)",
     )
     parser.add_argument(
+        "--closing_reward",
+        action="store_true",
+        help="Add reward for reducing distance to target (helps with moving targets)",
+    )
+    parser.add_argument(
         "--bev_depth_wrist_rgb",
         action="store_true",
         help="Asymmetric sensors: BEV depth-only (1ch) + Wrist RGB (3ch)",
@@ -409,6 +414,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         randomize_hand_position=args.randomize_hand_position,
         force_disturbances=args.force_disturbances,
         force_disturbance_max=args.force_disturbance_max,
+        closing_reward=args.closing_reward,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
@@ -982,6 +988,11 @@ def main():
     print(f"UTD ratio: {args.utd_ratio}")
     print(f"Encoder type: {args.encoder_type}")
     print(f"Start pose: {args.start_pose}")
+    print(f"Randomize hand position: {args.randomize_hand_position}")
+    print(f"Force disturbances: {args.force_disturbances}")
+    if args.force_disturbances:
+        print(f"Force disturbance max: {args.force_disturbance_max}N")
+    print(f"Closing reward: {args.closing_reward}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")
