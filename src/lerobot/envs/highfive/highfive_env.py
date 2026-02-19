@@ -53,6 +53,8 @@ REWARD_SCALE = 1.0  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
+FACING_REWARD_SCALE = 2.0  # Scale for facing reward (gripper pointing toward palm)
+FRONTAL_CONTACT_THRESHOLD = 0.3  # Dot product threshold for frontal contact (cos ~73°)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -275,6 +277,11 @@ class HighFiveEnv(gym.Env):
         # Gripper actuator (6th DOF) — held closed during high-five
         self._gripper_actuator_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper"
+        )
+
+        # Body IDs for orientation computation
+        self._gripper_body_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_BODY, "gripper"
         )
 
         # Geom IDs for physics-based contact detection
@@ -521,6 +528,42 @@ class HighFiveEnv(gym.Env):
         ee_pos = self._get_ee_position()
         hand_pos = self._get_hand_position()
         return np.linalg.norm(ee_pos - hand_pos)
+
+    def _get_gripper_forward(self) -> np.ndarray:
+        """Get gripper forward direction (toward fist tip) in world frame.
+
+        The fist is at local (~ -0.008, 0, -0.098), so the gripper points
+        along its negative local Z axis.
+        """
+        # xmat is a 3x3 rotation matrix stored row-major as (9,)
+        xmat = self._data.xmat[self._gripper_body_id].reshape(3, 3)
+        # Negative Z column = gripper forward direction
+        return -xmat[:, 2]
+
+    def _get_palm_normal(self) -> np.ndarray:
+        """Get palm face normal in world frame (points toward robot).
+
+        The hand body is rotated 90° around Z, so local +Y maps to
+        the palm front face direction.
+        """
+        xmat = self._data.xmat[self._hand_body_id].reshape(3, 3)
+        return xmat[:, 1]
+
+    def _compute_facing_score(self) -> float:
+        """Compute how well the gripper faces the palm.
+
+        Returns dot product of gripper forward and direction-to-palm,
+        ranging from -1 (facing away) to +1 (facing directly at palm).
+        """
+        ee_pos = self._get_ee_position()
+        hand_pos = self._get_hand_position()
+        to_palm = hand_pos - ee_pos
+        dist = np.linalg.norm(to_palm)
+        if dist < 1e-6:
+            return 1.0
+        to_palm_unit = to_palm / dist
+        gripper_fwd = self._get_gripper_forward()
+        return float(np.dot(gripper_fwd, to_palm_unit))
 
     def _check_contact(self) -> bool:
         """Check if there's contact between fist and palm using MuJoCo physics."""
@@ -990,14 +1033,18 @@ class HighFiveEnv(gym.Env):
             reward += 5.0 * closing
         self._prev_distance = distance
 
+        # Facing reward: encourage gripper to point toward palm
+        facing_score = self._compute_facing_score()
+        reward += FACING_REWARD_SCALE * max(0.0, facing_score)
+
         # Action rate penalty: penalize jerky movements
         action_diff = action - self._prev_action
         reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
         self._prev_action = action.copy()
 
-        # Check for contact (success)
+        # Check for contact (success) — requires frontal approach
         is_contact = self._check_contact()
-        if is_contact:
+        if is_contact and facing_score >= FRONTAL_CONTACT_THRESHOLD:
             reward += CONTACT_BONUS
             self._episode_success = True
 
