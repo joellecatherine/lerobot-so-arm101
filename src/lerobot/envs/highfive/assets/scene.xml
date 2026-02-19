@@ -33,7 +33,7 @@
       <joint name="hand_free" type="free"/>
       <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="0"/>
       <!-- Target zone on front face of palm — only fist contact here counts as success -->
-      <geom name="palm_target" type="box" size="0.025 0.005 0.025" pos="0 0.015 0" rgba="0.8 0.3 0.3 0.4" contype="0" conaffinity="0" group="4"/>
+      <geom name="palm_target" type="box" size="0.025 0.005 0.025" pos="0 0.015 0" rgba="0.8 0.3 0.3 0.4" contype="0" conaffinity="0" group="4" mass="0"/>
       <site name="hand_contact" pos="0 0.01 0" size="0.03" rgba="0 1 0 0.3"/>
     </body>
 

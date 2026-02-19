@@ -137,6 +137,7 @@ class HighFiveEnv(gym.Env):
         force_kicks_per_episode: int = 1,
         closing_reward: bool = False,
         facing_reward: bool = False,
+        palm_target_size: float = 0.05,
     ):
         """Initialize the High-Five environment.
 
@@ -189,6 +190,7 @@ class HighFiveEnv(gym.Env):
         self.force_kicks_per_episode = force_kicks_per_episode
         self.closing_reward = closing_reward
         self.facing_reward = facing_reward
+        self.palm_target_size = palm_target_size
 
         # Load MuJoCo model
         self._load_model()
@@ -295,6 +297,9 @@ class HighFiveEnv(gym.Env):
         self._palm_target_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "palm_target"
         )
+        # Set palm target zone size (half-extents: width, depth, height)
+        half = self.palm_target_size / 2.0
+        self._model.geom_size[self._palm_target_geom_id] = [half, 0.005, half]
         self._gripper_col_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "gripper_collision"
         )

@@ -238,6 +238,12 @@ def parse_args() -> argparse.Namespace:
         help="Add reward for gripper pointing toward palm",
     )
     parser.add_argument(
+        "--palm_target_size",
+        type=float,
+        default=0.05,
+        help="Palm target zone size in meters (0.05=5cm, 0.10=10cm)",
+    )
+    parser.add_argument(
         "--bev_depth_wrist_rgb",
         action="store_true",
         help="Asymmetric sensors: BEV depth-only (1ch) + Wrist RGB (3ch)",
@@ -421,6 +427,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         force_disturbance_max=args.force_disturbance_max,
         closing_reward=args.closing_reward,
         facing_reward=args.facing_reward,
+        palm_target_size=args.palm_target_size,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
