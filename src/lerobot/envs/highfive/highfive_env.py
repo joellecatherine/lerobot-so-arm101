@@ -53,7 +53,7 @@ REWARD_SCALE = 1.0  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
-FACING_REWARD_SCALE = 2.0  # Scale for facing reward (gripper pointing toward palm)
+FACING_REWARD_SCALE = 0.5  # Scale for facing reward (gripper pointing toward palm)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
