@@ -685,6 +685,7 @@ def train(args: argparse.Namespace):
     # Create policy
     print(f"Creating SAC policy on device: {args.device}")
     policy, policy_config = create_policy(args, env)
+    print(f"  Policy target_entropy: {policy.target_entropy}")
 
     # Resume from checkpoint if specified
     resume_step = 0
@@ -1007,6 +1008,7 @@ def main():
         print(f"Force disturbance max: {args.force_disturbance_max}N")
     print(f"Closing reward: {args.closing_reward}")
     print(f"Facing reward: {args.facing_reward}")
+    print(f"Target entropy: {args.target_entropy}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")

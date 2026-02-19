@@ -48,12 +48,12 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_BONUS = 10.0  # Bonus reward for contact
-REWARD_SCALE = 1.0  # Scale for exponential decay reward
+CONTACT_BONUS = 100.0  # Bonus reward for contact
+REWARD_SCALE = 0.4  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
-FACING_REWARD_SCALE = 0.5  # Scale for facing reward (gripper pointing toward palm)
+FACING_REWARD_SCALE = 0.1  # Scale for facing reward (gripper pointing toward palm)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
