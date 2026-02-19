@@ -715,16 +715,9 @@ class HighFiveEnv(gym.Env):
                 self._model.geom_size[geom_id] = self._original_hand_sizes[geom_id] * hand_scale
 
         # === Hand base position randomization ===
-        # Shoulder at (0.039, 0, 0.062), max reach ~0.41m. Keep within ~0.35m.
-        base_hand_pos = np.array([0.40, 0.0, 0.25])
-        offset = self._rng.uniform(
-            [-0.10, -0.10, -0.03],
-            [0.05, 0.10, 0.03]
-        )
-        self._hand_base_pos = np.clip(
-            base_hand_pos + offset,
-            [0.20, -0.20, 0.15],
-            [0.40, 0.20, 0.30],
+        self._hand_base_pos = self._rng.uniform(
+            [0.25, -0.25, 0.15],
+            [0.45, 0.25, 0.30],
         )
 
         # === Camera position/angle randomization ===
@@ -856,15 +849,9 @@ class HighFiveEnv(gym.Env):
 
         # Randomize hand base position (independent of domain randomization)
         if self.randomize_hand_position and not self.domain_randomization:
-            base_hand_pos = np.array([0.40, 0.0, 0.25])
-            offset = self._rng.uniform(
-                [-0.10, -0.10, -0.03],
-                [0.05, 0.10, 0.03]
-            )
-            self._hand_base_pos = np.clip(
-                base_hand_pos + offset,
-                [0.20, -0.20, 0.15],
-                [0.40, 0.20, 0.30],
+            self._hand_base_pos = self._rng.uniform(
+                [0.25, -0.25, 0.15],
+                [0.45, 0.25, 0.30],
             )
 
         # Set robot starting position
