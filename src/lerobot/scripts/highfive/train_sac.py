@@ -132,6 +132,12 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for all networks",
     )
     parser.add_argument(
+        "--temperature_lr",
+        type=float,
+        default=None,
+        help="Learning rate for temperature (alpha). Defaults to learning_rate if not set.",
+    )
+    parser.add_argument(
         "--buffer_capacity",
         type=int,
         default=200_000,
@@ -529,7 +535,7 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
         critic_target_update_weight=args.tau,
         critic_lr=args.learning_rate,
         actor_lr=args.learning_rate,
-        temperature_lr=args.learning_rate,
+        temperature_lr=args.temperature_lr or args.learning_rate,
         online_buffer_capacity=args.buffer_capacity,
         online_step_before_learning=args.warmup_steps,
         # Vision encoder settings (our custom encoder ignores these)
@@ -735,7 +741,7 @@ def train(args: argparse.Namespace):
     optimizers = {
         "critic": optim.Adam(optim_params["critic"], lr=args.learning_rate),
         "actor": optim.Adam(optim_params["actor"], lr=args.learning_rate),
-        "temperature": optim.Adam([optim_params["temperature"]], lr=args.learning_rate),
+        "temperature": optim.Adam([optim_params["temperature"]], lr=args.temperature_lr or args.learning_rate),
     }
 
     # Training state
@@ -1009,6 +1015,7 @@ def main():
     print(f"Closing reward: {args.closing_reward}")
     print(f"Facing reward: {args.facing_reward}")
     print(f"Target entropy: {args.target_entropy}")
+    print(f"Temperature LR: {args.temperature_lr or args.learning_rate}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")
     if args.resume:
         print(f"Resuming from: {args.resume}")
