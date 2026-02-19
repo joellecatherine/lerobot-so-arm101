@@ -48,7 +48,9 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_BONUS = 100.0  # Bonus reward for contact
+CONTACT_BONUS = 100.0  # Base bonus reward for contact (decays with timestep)
+CONTACT_BONUS_GAMMA = 0.99  # Decay rate for contact bonus per timestep
+CONTACT_TERMINATE_STEPS = 15  # Steps to continue after first contact before terminating
 REWARD_SCALE = 0.4  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
@@ -866,6 +868,7 @@ class HighFiveEnv(gym.Env):
         self._step_count = 0
         self._episode_count += 1
         self._episode_success = False  # Track if contact happened at any point
+        self._first_contact_step = None  # Step when first contact occurred
         self._prev_action = np.zeros(ACTION_DIM)  # For action rate penalty
 
         # Reset force disturbance state
@@ -1022,11 +1025,19 @@ class HighFiveEnv(gym.Env):
         # Check for contact (success) — fist must touch palm target zone (front face)
         is_contact = self._check_contact()
         if is_contact:
-            reward += CONTACT_BONUS
+            # Decaying contact bonus: reward early contact more than late contact
+            reward += CONTACT_BONUS * (CONTACT_BONUS_GAMMA ** self._step_count)
             self._episode_success = True
+            if self._first_contact_step is None:
+                self._first_contact_step = self._step_count
 
         # Check termination conditions
-        terminated = False  # Never terminate early — agent should stay near target
+        # Terminate early after CONTACT_TERMINATE_STEPS steps post first contact
+        if self._first_contact_step is not None:
+            steps_since_contact = self._step_count - self._first_contact_step
+            terminated = steps_since_contact >= CONTACT_TERMINATE_STEPS
+        else:
+            terminated = False
         truncated = self._step_count >= self.episode_length
 
         # Restore floor color before camera capture so kick indicator
