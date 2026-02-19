@@ -32,6 +32,8 @@
     <body name="hand_target" pos="0.40 0 0.25" euler="0 0 1.5708">
       <joint name="hand_free" type="free"/>
       <geom name="palm" type="box" size="0.032 0.01 0.05" pos="0 0 0" material="mathand" contype="0" conaffinity="0"/>
+      <!-- Target zone on front face of palm — only fist contact here counts as success -->
+      <geom name="palm_target" type="box" size="0.025 0.005 0.025" pos="0 0.015 0" rgba="0.8 0.3 0.3 0.4" contype="0" conaffinity="0" group="4"/>
       <site name="hand_contact" pos="0 0.01 0" size="0.03" rgba="0 1 0 0.3"/>
     </body>
 
@@ -48,6 +50,7 @@
   <contact>
     <!-- solref: stiff + damped contact. solimp: near-rigid. margin: forces start 5mm before penetration -->
     <pair geom1="fist" geom2="palm" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
+    <pair geom1="fist" geom2="palm_target" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
     <pair geom1="gripper_collision" geom2="palm" solref="0.001 1" solimp="0.99 0.99 0.001" margin="0.005"/>
 
   </contact>

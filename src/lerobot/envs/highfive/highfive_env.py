@@ -54,7 +54,6 @@ REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
 FACING_REWARD_SCALE = 2.0  # Scale for facing reward (gripper pointing toward palm)
-FRONTAL_CONTACT_THRESHOLD = 0.3  # Dot product threshold for frontal contact (cos ~73°)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -290,6 +289,9 @@ class HighFiveEnv(gym.Env):
         )
         self._palm_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "palm"
+        )
+        self._palm_target_geom_id = mujoco.mj_name2id(
+            self._model, mujoco.mjtObj.mjOBJ_GEOM, "palm_target"
         )
         self._gripper_col_geom_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_GEOM, "gripper_collision"
@@ -566,12 +568,12 @@ class HighFiveEnv(gym.Env):
         return float(np.dot(gripper_fwd, to_palm_unit))
 
     def _check_contact(self) -> bool:
-        """Check if there's contact between fist and palm using MuJoCo physics."""
+        """Check if there's contact between fist and palm target zone."""
         for i in range(self._data.ncon):
             contact = self._data.contact[i]
             g1, g2 = contact.geom1, contact.geom2
-            if (g1 == self._fist_geom_id and g2 == self._palm_geom_id) or \
-               (g1 == self._palm_geom_id and g2 == self._fist_geom_id):
+            if (g1 == self._fist_geom_id and g2 == self._palm_target_geom_id) or \
+               (g1 == self._palm_target_geom_id and g2 == self._fist_geom_id):
                 return True
         return False
 
@@ -1029,9 +1031,9 @@ class HighFiveEnv(gym.Env):
         reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
         self._prev_action = action.copy()
 
-        # Check for contact (success) — requires frontal approach
+        # Check for contact (success) — fist must touch palm target zone (front face)
         is_contact = self._check_contact()
-        if is_contact and facing_score >= FRONTAL_CONTACT_THRESHOLD:
+        if is_contact:
             reward += CONTACT_BONUS
             self._episode_success = True
 
