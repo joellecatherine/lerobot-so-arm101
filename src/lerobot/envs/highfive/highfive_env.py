@@ -136,6 +136,7 @@ class HighFiveEnv(gym.Env):
         force_disturbance_duration: int = 15,
         force_kicks_per_episode: int = 1,
         closing_reward: bool = False,
+        facing_reward: bool = False,
     ):
         """Initialize the High-Five environment.
 
@@ -187,6 +188,7 @@ class HighFiveEnv(gym.Env):
         self.force_disturbance_duration = force_disturbance_duration
         self.force_kicks_per_episode = force_kicks_per_episode
         self.closing_reward = closing_reward
+        self.facing_reward = facing_reward
 
         # Load MuJoCo model
         self._load_model()
@@ -1023,8 +1025,9 @@ class HighFiveEnv(gym.Env):
         self._prev_distance = distance
 
         # Facing reward: encourage gripper to point toward palm
-        facing_score = self._compute_facing_score()
-        reward += FACING_REWARD_SCALE * max(0.0, facing_score)
+        if self.facing_reward:
+            facing_score = self._compute_facing_score()
+            reward += FACING_REWARD_SCALE * max(0.0, facing_score)
 
         # Action rate penalty: penalize jerky movements
         action_diff = action - self._prev_action

@@ -482,6 +482,7 @@ class HighFiveEnvConfig(EnvConfig):
     force_disturbances: bool = False  # Apply random force kicks to arm
     force_disturbance_max: float = 10.0  # Max Cartesian force on arm body (N)
     closing_reward: bool = False  # Reward for reducing distance (helps with moving targets)
+    facing_reward: bool = False  # Reward for gripper pointing toward palm
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -538,4 +539,5 @@ class HighFiveEnvConfig(EnvConfig):
             "force_disturbances": self.force_disturbances,
             "force_disturbance_max": self.force_disturbance_max,
             "closing_reward": self.closing_reward,
+            "facing_reward": self.facing_reward,
         }
