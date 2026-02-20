@@ -1036,21 +1036,16 @@ class HighFiveEnv(gym.Env):
         distance = self._compute_distance()
 
         if self.facing_reward:
-            # Orient-then-reach reward (max 1.0/step)
+            # Orient-then-reach reward
             # Map facing score from [-1,1] to [0,1] for smooth gradients everywhere
             facing_score = self._compute_facing_score()
             F = 0.5 * (facing_score + 1.0)
-            # Distance × orientation³: approach only rewarded when well oriented
-            reward = 0.8 * np.exp(-REWARD_SIGMA * distance) * F ** 3
+            # Closing velocity: only rewards movement, not hovering (potential-based)
+            reward = 5.0 * (self._prev_distance - distance)
             # Pure orientation: always provides gradient to improve facing
             reward += 0.2 * F
         else:
             reward = 0.2 * np.exp(-REWARD_SIGMA * distance)
-
-        # Closing velocity reward: reward for reducing distance to target
-        if self.closing_reward:
-            closing = max(0.0, self._prev_distance - distance)
-            reward += 5.0 * closing
         self._prev_distance = distance
 
         # Action rate penalty: penalize jerky movements

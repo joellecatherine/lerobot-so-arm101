@@ -760,6 +760,7 @@ def train(args: argparse.Namespace):
     # Training state
     global_step = resume_step
     episode_count = 0
+    total_successes = 0
     best_success_rate = 0.0
 
     # Signal handler for graceful shutdown
@@ -937,11 +938,15 @@ def train(args: argparse.Namespace):
             elif hasattr(is_success, '__iter__') and not isinstance(is_success, (str, bool)):
                 success_value = bool(is_success[0]) if len(is_success) > 0 else False
 
+            if success_value:
+                total_successes += 1
+
             log_dict = {
                 "episode/reward": episode_reward,
                 "episode/length": episode_length,
                 "episode/success": float(success_value),
                 "episode/count": episode_count,
+                "episode/total_successes": total_successes,
             }
 
             if wandb_run:
@@ -949,7 +954,8 @@ def train(args: argparse.Namespace):
 
             print(
                 f"Episode {episode_count:>4d} | Reward: {episode_reward:>8.2f} | "
-                f"Length: {episode_length:>3d} | Success: {is_success}"
+                f"Length: {episode_length:>3d} | Success: {is_success} | "
+                f"Total: {total_successes}/{episode_count}"
             )
 
             # Reset for next episode
