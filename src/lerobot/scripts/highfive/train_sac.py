@@ -255,6 +255,11 @@ def parse_args() -> argparse.Namespace:
         help="Palm target zone size in meters (0.05=5cm, 0.10=10cm)",
     )
     parser.add_argument(
+        "--ee_orientation",
+        action="store_true",
+        help="Add 6D EE orientation to state vector (state mode only)",
+    )
+    parser.add_argument(
         "--bev_depth_wrist_rgb",
         action="store_true",
         help="Asymmetric sensors: BEV depth-only (1ch) + Wrist RGB (3ch)",
@@ -440,6 +445,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         facing_reward=args.facing_reward,
         action_penalty=args.action_penalty,
         palm_target_size=args.palm_target_size,
+        ee_orientation=args.ee_orientation,
     )
 
     env_dict = make_env(env_config, n_envs=args.n_envs)
@@ -465,17 +471,18 @@ def create_policy(args: argparse.Namespace, env: gym.vector.VectorEnv):
     use_state_only = args.obs_type == "state"
 
     if use_state_only:
-        # State-only: 19-dim state vector
-        # joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
+        # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) = 16
+        # With ee_orientation: + 6D rotation = 22
+        state_dim = 22 if args.ee_orientation else 16
         input_features = {
             OBS_STATE: PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(19,),
+                shape=(state_dim,),
             ),
         }
         encoder_config = {
             "latent_dim": 256,
-            "state_dim": 19,
+            "state_dim": state_dim,
             "encoder_type": "state",
             "single_camera": True,
         }
@@ -1020,6 +1027,7 @@ def main():
         print(f"Force disturbance max: {args.force_disturbance_max}N")
     print(f"Closing reward: {args.closing_reward}")
     print(f"Facing reward: {args.facing_reward}")
+    print(f"EE orientation: {args.ee_orientation}")
     print(f"Target entropy: {args.target_entropy}")
     print(f"Temperature LR: {args.temperature_lr or args.learning_rate}")
     print(f"Unfreeze backbones: {args.unfreeze_backbones}")

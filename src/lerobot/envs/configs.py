@@ -485,6 +485,7 @@ class HighFiveEnvConfig(EnvConfig):
     facing_reward: bool = False  # Reward for gripper pointing toward palm
     action_penalty: bool = False  # Penalty for jerky actions (squared action diff)
     palm_target_size: float = 0.05  # Palm target zone size in meters (0.05 = 5cm x 5cm)
+    ee_orientation: bool = False  # Add 6D EE orientation to state vector
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
             ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
@@ -514,10 +515,12 @@ class HighFiveEnvConfig(EnvConfig):
             if not self.single_camera:
                 self.features["pixels/wrist"] = PolicyFeature(type=FeatureType.VISUAL, shape=img_shape)
         elif self.obs_type == "state":
-            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
+            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) = 16
+            # With ee_orientation: + 6D rotation = 22
+            state_dim = 22 if self.ee_orientation else 16
             self.features["state"] = PolicyFeature(
                 type=FeatureType.STATE,
-                shape=(19,),
+                shape=(state_dim,),
             )
         else:
             raise ValueError(f"Unsupported obs_type: {self.obs_type}")
@@ -544,4 +547,5 @@ class HighFiveEnvConfig(EnvConfig):
             "facing_reward": self.facing_reward,
             "action_penalty": self.action_penalty,
             "palm_target_size": self.palm_target_size,
+            "ee_orientation": self.ee_orientation,
         }

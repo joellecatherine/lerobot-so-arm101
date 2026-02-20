@@ -141,6 +141,7 @@ class HighFiveEnv(gym.Env):
         facing_reward: bool = False,
         action_penalty: bool = False,
         palm_target_size: float = 0.05,
+        ee_orientation: bool = False,
     ):
         """Initialize the High-Five environment.
 
@@ -195,6 +196,7 @@ class HighFiveEnv(gym.Env):
         self.facing_reward = facing_reward
         self.action_penalty = action_penalty
         self.palm_target_size = palm_target_size
+        self.ee_orientation = ee_orientation
 
         # Load MuJoCo model
         self._load_model()
@@ -330,12 +332,14 @@ class HighFiveEnv(gym.Env):
     def _setup_observation_space(self):
         """Set up the observation space based on obs_type."""
         if self.obs_type == "state":
-            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) = 16 dims
+            # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) = 16
+            # With ee_orientation: + 6D rotation = 22
+            state_dim = 22 if self.ee_orientation else 16
             self.observation_space = spaces.Dict({
                 "state": spaces.Box(
                     low=-np.inf,
                     high=np.inf,
-                    shape=(16,),
+                    shape=(state_dim,),
                     dtype=np.float64,
                 ),
             })
@@ -531,6 +535,15 @@ class HighFiveEnv(gym.Env):
     def _get_ee_position(self) -> np.ndarray:
         """Get end effector position."""
         return self._data.site_xpos[self._ee_site_id].copy()
+
+    def _get_ee_orientation(self) -> np.ndarray:
+        """Get end effector orientation as 6D continuous representation.
+
+        Returns the first two columns of the gripper rotation matrix,
+        flattened to a 6D vector (Zhou et al. 2019).
+        """
+        xmat = self._data.xmat[self._gripper_body_id].reshape(3, 3)
+        return xmat[:, :2].flatten()
 
     def _get_hand_position(self) -> np.ndarray:
         """Get hand target position."""
@@ -755,11 +768,16 @@ class HighFiveEnv(gym.Env):
         """Get current observation with configurable cameras and depth."""
         if self.obs_type == "state":
             # State-only: joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) = 16
-            joint_pos = self._get_joint_positions()
-            joint_vel = self._get_joint_velocities()
-            ee_pos = self._get_ee_position()
-            hand_pos = self._get_hand_position()
-            return {"state": np.concatenate([joint_pos, joint_vel, ee_pos, hand_pos])}
+            # With ee_orientation: + 6D rotation = 22
+            parts = [
+                self._get_joint_positions(),
+                self._get_joint_velocities(),
+                self._get_ee_position(),
+            ]
+            if self.ee_orientation:
+                parts.append(self._get_ee_orientation())
+            parts.append(self._get_hand_position())
+            return {"state": np.concatenate(parts)}
 
         if self.bev_depth_wrist_rgb:
             # Asymmetric mode: BEV depth-only, Wrist RGB
