@@ -573,19 +573,35 @@ class HighFiveEnv(gym.Env):
         return xmat[:, 1]
 
     def _compute_facing_score(self) -> float:
-        """Compute how well the gripper faces into the palm front face.
+        """Compute how well the gripper approaches the palm head-on.
 
-        Uses the fixed palm normal instead of direction-to-palm, so the
-        agent can only get reward by pointing head-on into the palm —
-        not from above, below, or behind.
+        Combines two conditions via multiplication (logical AND):
+        1. F_pointing: gripper forward aligns with direction-to-palm
+        2. F_angle: approach direction aligns with palm front face normal
 
-        Returns dot product ranging from -1 (facing away) to +1 (facing
-        directly into the palm front face).
+        This prevents reward hacking from above/below (F_angle ≈ 0)
+        and from the side (F_pointing ≈ 0). Only a head-on frontal
+        approach scores high on both.
+
+        Returns value in [0, 1] where 1 = perfect head-on approach.
         """
+        ee_pos = self._get_ee_position()
+        hand_pos = self._get_hand_position()
+        to_palm = hand_pos - ee_pos
+        dist = np.linalg.norm(to_palm)
+        if dist < 1e-6:
+            return 1.0
+        v = to_palm / dist
+
         gripper_fwd = self._get_gripper_forward()
         palm_normal = self._get_palm_normal()
-        # Palm normal points toward robot; gripper should point opposite
-        return float(np.dot(gripper_fwd, -palm_normal))
+
+        # Gripper points at palm center
+        f_pointing = max(0.0, float(np.dot(gripper_fwd, v)))
+        # Approach vector aligns with palm front face (-normal = into palm)
+        f_angle = max(0.0, float(np.dot(v, -palm_normal)))
+
+        return f_pointing * f_angle
 
     def _check_contact(self) -> bool:
         """Check if there's contact between fist and palm target zone."""
@@ -1035,13 +1051,11 @@ class HighFiveEnv(gym.Env):
         distance = self._compute_distance()
 
         if self.facing_reward:
-            # Orient-then-reach reward
-            # Map facing score from [-1,1] to [0,1] for smooth gradients everywhere
-            facing_score = self._compute_facing_score()
-            F = 0.5 * (facing_score + 1.0)
-            # Closing velocity: only rewards movement, not hovering (potential-based)
+            # Relative facing: F_pointing * F_angle, already in [0, 1]
+            F = self._compute_facing_score()
+            # Closing velocity: potential-based, no hovering reward
             reward = 5.0 * (self._prev_distance - distance)
-            # Pure orientation: always provides gradient to improve facing
+            # Orientation: only high when pointing at palm AND approaching head-on
             reward += 0.2 * F
         else:
             reward = 0.2 * np.exp(-REWARD_SIGMA * distance)
