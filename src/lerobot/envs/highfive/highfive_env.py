@@ -1044,8 +1044,8 @@ class HighFiveEnv(gym.Env):
             orientation_gate = max(0.0, facing_score)
             # Always reward good orientation
             reward = FACING_REWARD_SCALE * orientation_gate
-            # Only reward proximity when reasonably oriented
-            reward += REWARD_SCALE * np.exp(-REWARD_SIGMA * distance) * orientation_gate
+            # Only reward proximity when well oriented (cubed gate suppresses approach until facing > 0.7)
+            reward += REWARD_SCALE * np.exp(-REWARD_SIGMA * distance) * orientation_gate ** 3
         else:
             reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
 
