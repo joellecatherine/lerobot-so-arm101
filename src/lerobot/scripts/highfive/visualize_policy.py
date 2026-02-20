@@ -36,6 +36,10 @@ def main():
     parser.add_argument("--observation_size", type=int, default=84)
     parser.add_argument("--render_mode", type=str, default="human", choices=["human", "rgb_array"],
                         help="human = live MuJoCo viewer, rgb_array = offscreen (use with --save_video)")
+    parser.add_argument("--ee_orientation", action="store_true")
+    parser.add_argument("--facing_reward", action="store_true")
+    parser.add_argument("--palm_target_size", type=float, default=0.05)
+    parser.add_argument("--randomize_hand_position", action="store_true")
     args = parser.parse_args()
 
     from lerobot.envs.highfive.highfive_env import HighFiveEnv
@@ -51,6 +55,10 @@ def main():
         observation_width=args.observation_size,
         observation_height=args.observation_size,
         render_mode=args.render_mode,
+        ee_orientation=args.ee_orientation,
+        facing_reward=args.facing_reward,
+        palm_target_size=args.palm_target_size,
+        randomize_hand_position=args.randomize_hand_position,
     )
 
     # Load policy
@@ -62,11 +70,12 @@ def main():
     use_state = args.obs_type == "state"
 
     if use_state:
+        state_dim = 22 if args.ee_orientation else 16
         input_features = {
-            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(19,)),
+            OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(state_dim,)),
         }
         encoder_config = {
-            "latent_dim": 256, "state_dim": 19,
+            "latent_dim": 256, "state_dim": state_dim,
             "encoder_type": "state", "single_camera": True,
         }
     else:

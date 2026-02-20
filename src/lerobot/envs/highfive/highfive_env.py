@@ -573,20 +573,19 @@ class HighFiveEnv(gym.Env):
         return xmat[:, 1]
 
     def _compute_facing_score(self) -> float:
-        """Compute how well the gripper faces the palm.
+        """Compute how well the gripper faces into the palm front face.
 
-        Returns dot product of gripper forward and direction-to-palm,
-        ranging from -1 (facing away) to +1 (facing directly at palm).
+        Uses the fixed palm normal instead of direction-to-palm, so the
+        agent can only get reward by pointing head-on into the palm —
+        not from above, below, or behind.
+
+        Returns dot product ranging from -1 (facing away) to +1 (facing
+        directly into the palm front face).
         """
-        ee_pos = self._get_ee_position()
-        hand_pos = self._get_hand_position()
-        to_palm = hand_pos - ee_pos
-        dist = np.linalg.norm(to_palm)
-        if dist < 1e-6:
-            return 1.0
-        to_palm_unit = to_palm / dist
         gripper_fwd = self._get_gripper_forward()
-        return float(np.dot(gripper_fwd, to_palm_unit))
+        palm_normal = self._get_palm_normal()
+        # Palm normal points toward robot; gripper should point opposite
+        return float(np.dot(gripper_fwd, -palm_normal))
 
     def _check_contact(self) -> bool:
         """Check if there's contact between fist and palm target zone."""
