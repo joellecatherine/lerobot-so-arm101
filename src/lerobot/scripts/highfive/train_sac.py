@@ -244,6 +244,11 @@ def parse_args() -> argparse.Namespace:
         help="Add reward for gripper pointing toward palm",
     )
     parser.add_argument(
+        "--action_penalty",
+        action="store_true",
+        help="Add penalty for jerky actions (squared action diff)",
+    )
+    parser.add_argument(
         "--palm_target_size",
         type=float,
         default=0.05,
@@ -433,6 +438,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         force_disturbance_max=args.force_disturbance_max,
         closing_reward=args.closing_reward,
         facing_reward=args.facing_reward,
+        action_penalty=args.action_penalty,
         palm_target_size=args.palm_target_size,
     )
 

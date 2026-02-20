@@ -483,6 +483,7 @@ class HighFiveEnvConfig(EnvConfig):
     force_disturbance_max: float = 10.0  # Max Cartesian force on arm body (N)
     closing_reward: bool = False  # Reward for reducing distance (helps with moving targets)
     facing_reward: bool = False  # Reward for gripper pointing toward palm
+    action_penalty: bool = False  # Penalty for jerky actions (squared action diff)
     palm_target_size: float = 0.05  # Palm target zone size in meters (0.05 = 5cm x 5cm)
     features: dict[str, PolicyFeature] = field(
         default_factory=lambda: {
@@ -541,5 +542,6 @@ class HighFiveEnvConfig(EnvConfig):
             "force_disturbance_max": self.force_disturbance_max,
             "closing_reward": self.closing_reward,
             "facing_reward": self.facing_reward,
+            "action_penalty": self.action_penalty,
             "palm_target_size": self.palm_target_size,
         }

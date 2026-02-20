@@ -139,6 +139,7 @@ class HighFiveEnv(gym.Env):
         force_kicks_per_episode: int = 1,
         closing_reward: bool = False,
         facing_reward: bool = False,
+        action_penalty: bool = False,
         palm_target_size: float = 0.05,
     ):
         """Initialize the High-Five environment.
@@ -192,6 +193,7 @@ class HighFiveEnv(gym.Env):
         self.force_kicks_per_episode = force_kicks_per_episode
         self.closing_reward = closing_reward
         self.facing_reward = facing_reward
+        self.action_penalty = action_penalty
         self.palm_target_size = palm_target_size
 
         # Load MuJoCo model
@@ -1018,8 +1020,9 @@ class HighFiveEnv(gym.Env):
             reward += FACING_REWARD_SCALE * max(0.0, facing_score)
 
         # Action rate penalty: penalize jerky movements
-        action_diff = action - self._prev_action
-        reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
+        if self.action_penalty:
+            action_diff = action - self._prev_action
+            reward -= ACTION_RATE_PENALTY * np.sum(action_diff ** 2)
         self._prev_action = action.copy()
 
         # Check for contact (success) — fist must touch palm target zone (front face)
