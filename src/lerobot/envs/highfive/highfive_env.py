@@ -1014,10 +1014,11 @@ class HighFiveEnv(gym.Env):
             reward += 5.0 * closing
         self._prev_distance = distance
 
-        # Facing reward: encourage gripper to point toward palm
+        # Facing reward: encourage gripper to point toward palm, gated by proximity
         if self.facing_reward:
             facing_score = self._compute_facing_score()
-            reward += FACING_REWARD_SCALE * max(0.0, facing_score)
+            proximity_gate = np.exp(-REWARD_SIGMA * distance)
+            reward += FACING_REWARD_SCALE * max(0.0, facing_score) * proximity_gate
 
         # Action rate penalty: penalize jerky movements
         if self.action_penalty:
