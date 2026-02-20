@@ -48,14 +48,11 @@ ACTION_DIM = 5  # 5 arm joints (gripper stays closed)
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
 DEFAULT_EPISODE_LENGTH = 200
-CONTACT_BONUS = 100.0  # Base bonus reward for contact (decays with timestep)
-CONTACT_BONUS_GAMMA = 0.99  # Decay rate for contact bonus per timestep
+CONTACT_BONUS = 10.0  # One-time terminal bonus for contact
 CONTACT_TERMINATE_STEPS = 0  # Steps to continue after first contact before terminating
-REWARD_SCALE = 0.2  # Scale for exponential decay reward
 REWARD_SIGMA = 5.0  # Decay rate (per meter) for exponential reward
 ACTION_RATE_PENALTY = 0.01  # Penalty for jerky actions (squared diff)
 CONTACT_FORCE_PENALTY = 0.001  # Penalty per Newton of contact force (encourages gentle approach)
-FACING_REWARD_SCALE = 0.2  # Scale for facing reward (gripper pointing toward palm)
 
 # Starting poses (5 arm joints: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll)
 START_POSES = {
@@ -1039,15 +1036,16 @@ class HighFiveEnv(gym.Env):
         distance = self._compute_distance()
 
         if self.facing_reward:
-            # Orient-then-reach: gate distance reward by orientation quality
+            # Orient-then-reach reward (max 1.0/step)
+            # Map facing score from [-1,1] to [0,1] for smooth gradients everywhere
             facing_score = self._compute_facing_score()
-            orientation_gate = max(0.0, facing_score)
-            # Always reward good orientation
-            reward = FACING_REWARD_SCALE * orientation_gate
-            # Only reward proximity when well oriented (cubed gate suppresses approach until facing > 0.7)
-            reward += REWARD_SCALE * np.exp(-REWARD_SIGMA * distance) * orientation_gate ** 3
+            F = 0.5 * (facing_score + 1.0)
+            # Distance × orientation³: approach only rewarded when well oriented
+            reward = 0.8 * np.exp(-REWARD_SIGMA * distance) * F ** 3
+            # Pure orientation: always provides gradient to improve facing
+            reward += 0.2 * F
         else:
-            reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
+            reward = 0.2 * np.exp(-REWARD_SIGMA * distance)
 
         # Closing velocity reward: reward for reducing distance to target
         if self.closing_reward:
@@ -1064,8 +1062,8 @@ class HighFiveEnv(gym.Env):
         # Check for contact (success) — fist must touch palm target zone (front face)
         is_contact = self._check_contact()
         if is_contact:
-            # Decaying contact bonus: reward early contact more than late contact
-            reward += CONTACT_BONUS * (CONTACT_BONUS_GAMMA ** self._step_count)
+            # One-time terminal bonus (γ discount naturally incentivizes early contact)
+            reward += CONTACT_BONUS
             self._episode_success = True
             if self._first_contact_step is None:
                 self._first_contact_step = self._step_count
