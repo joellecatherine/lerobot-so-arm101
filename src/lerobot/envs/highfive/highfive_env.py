@@ -134,7 +134,6 @@ class HighFiveEnv(gym.Env):
         force_disturbance_interval: tuple[int, int] = (30, 100),
         force_disturbance_duration: int = 15,
         force_kicks_per_episode: int = 1,
-        closing_reward: bool = False,
         facing_reward: bool = False,
         action_penalty: bool = False,
         palm_target_size: float = 0.05,
@@ -189,7 +188,6 @@ class HighFiveEnv(gym.Env):
         self.force_disturbance_interval = force_disturbance_interval
         self.force_disturbance_duration = force_disturbance_duration
         self.force_kicks_per_episode = force_kicks_per_episode
-        self.closing_reward = closing_reward
         self.facing_reward = facing_reward
         self.action_penalty = action_penalty
         self.palm_target_size = palm_target_size
@@ -1054,7 +1052,7 @@ class HighFiveEnv(gym.Env):
             # Relative facing: F_pointing * F_angle, already in [0, 1]
             F = self._compute_facing_score()
             # Closing velocity: potential-based, no hovering reward
-            reward = 15.0 * (self._prev_distance - distance)
+            reward = 20.0 * (self._prev_distance - distance)
             # Orientation: only high when pointing at palm AND approaching head-on
             reward += 0.2 * F
         else:
