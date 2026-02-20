@@ -643,8 +643,8 @@ class HighFiveEnv(gym.Env):
         elif self.hand_motion_type == "random_walk":
             # Target-based random walk: pick a random target, move toward it smoothly,
             # then pick a new target on arrival. Large amplitude, controlled speed.
-            bounds_lo = np.array([0.20, -0.20, 0.15])
-            bounds_hi = np.array([0.40, 0.20, 0.30])
+            bounds_lo = np.array([0.20, -0.15, 0.15])
+            bounds_hi = np.array([0.40, 0.15, 0.30])
             if not hasattr(self, '_hand_walk_pos'):
                 self._hand_walk_pos = self._hand_base_pos.copy()
                 self._hand_walk_target = self._rng.uniform(bounds_lo, bounds_hi)
@@ -664,8 +664,8 @@ class HighFiveEnv(gym.Env):
             move_steps = 80
             if not hasattr(self, '_hold_target'):
                 # Pick random target within reachable bounds
-                bounds_lo = np.array([0.25, -0.25, 0.15])
-                bounds_hi = np.array([0.45,  0.25, 0.30])
+                bounds_lo = np.array([0.25, -0.15, 0.15])
+                bounds_hi = np.array([0.45,  0.15, 0.30])
                 self._hold_target = self._rng.uniform(bounds_lo, bounds_hi)
             if self._step_count < move_steps:
                 # Smooth interpolation from base to target
@@ -722,8 +722,8 @@ class HighFiveEnv(gym.Env):
 
         # === Hand base position randomization ===
         self._hand_base_pos = self._rng.uniform(
-            [0.25, -0.25, 0.15],
-            [0.45, 0.25, 0.30],
+            [0.25, -0.15, 0.15],
+            [0.45, 0.15, 0.30],
         )
 
         # === Camera position/angle randomization ===
@@ -860,8 +860,8 @@ class HighFiveEnv(gym.Env):
         # Randomize hand base position (independent of domain randomization)
         if self.randomize_hand_position and not self.domain_randomization:
             self._hand_base_pos = self._rng.uniform(
-                [0.25, -0.25, 0.15],
-                [0.45, 0.25, 0.30],
+                [0.25, -0.15, 0.15],
+                [0.45, 0.15, 0.30],
             )
 
         # Set robot starting position
@@ -1020,22 +1020,25 @@ class HighFiveEnv(gym.Env):
 
         self._step_count += 1
 
-        # Compute reward: 10 * exp(-5 * d)
-        # At 2cm: 9.05, at 10cm: 6.07, at 20cm: 3.68, at 40cm: 1.35
+        # Compute reward
         distance = self._compute_distance()
-        reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
+
+        if self.facing_reward:
+            # Orient-then-reach: gate distance reward by orientation quality
+            facing_score = self._compute_facing_score()
+            orientation_gate = max(0.0, facing_score)
+            # Always reward good orientation
+            reward = FACING_REWARD_SCALE * orientation_gate
+            # Only reward proximity when reasonably oriented
+            reward += REWARD_SCALE * np.exp(-REWARD_SIGMA * distance) * orientation_gate
+        else:
+            reward = REWARD_SCALE * np.exp(-REWARD_SIGMA * distance)
 
         # Closing velocity reward: reward for reducing distance to target
         if self.closing_reward:
             closing = max(0.0, self._prev_distance - distance)
             reward += 5.0 * closing
         self._prev_distance = distance
-
-        # Facing reward: encourage gripper to point toward palm, gated by proximity
-        if self.facing_reward:
-            facing_score = self._compute_facing_score()
-            proximity_gate = np.exp(-REWARD_SIGMA * distance)
-            reward += FACING_REWARD_SCALE * max(0.0, facing_score) * proximity_gate
 
         # Action rate penalty: penalize jerky movements
         if self.action_penalty:
