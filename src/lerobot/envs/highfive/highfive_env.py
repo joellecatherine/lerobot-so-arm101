@@ -1054,7 +1054,7 @@ class HighFiveEnv(gym.Env):
             # Relative facing: F_pointing * F_angle, already in [0, 1]
             F = self._compute_facing_score()
             # Closing velocity: potential-based, no hovering reward
-            reward = 5.0 * (self._prev_distance - distance)
+            reward = 15.0 * (self._prev_distance - distance)
             # Orientation: only high when pointing at palm AND approaching head-on
             reward += 0.2 * F
         else:
