@@ -876,12 +876,27 @@ class HighFiveEnv(gym.Env):
             qpos_addr = self._model.jnt_qposadr[joint_id]
             self._data.qpos[qpos_addr] = initial_qpos[i]
 
-        # Initialize hand position
+        # Initialize hand at current base pos and settle simulation
         self._update_hand_position()
-
-        # Step simulation to settle
         for _ in range(10):
             mujoco.mj_step(self._model, self._data)
+
+        # Sample hand in a spherical shell around the settled EE position
+        # to ensure consistent difficulty (no free successes or unreachable targets).
+        # Uses rejection sampling because the workspace bounds are tight relative
+        # to the shell radius, making O(1) shell+clamp unreliable.
+        ee_pos = self._get_ee_position()
+        bounds_lo = np.array([0.25, -0.15, 0.15])
+        bounds_hi = np.array([0.45, 0.15, 0.30])
+        r_min, r_max = 0.15, 0.30
+        for _ in range(100):
+            candidate = self._rng.uniform(bounds_lo, bounds_hi)
+            dist = np.linalg.norm(candidate - ee_pos)
+            if r_min <= dist <= r_max:
+                self._hand_base_pos = candidate
+                break
+        self._update_hand_position()
+        mujoco.mj_forward(self._model, self._data)
 
         # Reset step counter
         self._step_count = 0
