@@ -236,8 +236,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force_disturbance_duration",
         type=int,
-        default=15,
+        default=8,
         help="How many steps each force kick lasts",
+    )
+    parser.add_argument(
+        "--force_kicks_per_episode",
+        type=int,
+        default=3,
+        help="Max number of force kicks per episode",
     )
     parser.add_argument(
         "--facing_reward",
@@ -443,6 +449,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         force_disturbances=args.force_disturbances,
         force_disturbance_max=args.force_disturbance_max,
         force_disturbance_duration=args.force_disturbance_duration,
+        force_kicks_per_episode=args.force_kicks_per_episode,
         facing_reward=args.facing_reward,
         action_penalty=args.action_penalty,
         palm_target_size=args.palm_target_size,
@@ -1033,6 +1040,7 @@ def main():
     if args.force_disturbances:
         print(f"Force disturbance max: {args.force_disturbance_max}N")
         print(f"Force disturbance duration: {args.force_disturbance_duration} steps")
+        print(f"Force kicks per episode: {args.force_kicks_per_episode}")
     print(f"Facing reward: {args.facing_reward}")
     print(f"EE orientation: {args.ee_orientation}")
     print(f"Target entropy: {args.target_entropy}")

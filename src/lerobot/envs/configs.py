@@ -481,7 +481,8 @@ class HighFiveEnvConfig(EnvConfig):
     randomize_hand_position: bool = False  # Randomize hand base pos each episode
     force_disturbances: bool = False  # Apply random force kicks to arm
     force_disturbance_max: float = 10.0  # Max Cartesian force on arm body (N)
-    force_disturbance_duration: int = 15  # How many steps each force kick lasts
+    force_disturbance_duration: int = 8  # How many steps each force kick lasts
+    force_kicks_per_episode: int = 3  # Max number of force kicks per episode
     facing_reward: bool = False  # Reward for gripper pointing toward palm
     action_penalty: bool = False  # Penalty for jerky actions (squared action diff)
     palm_target_size: float = 0.05  # Palm target zone size in meters (0.05 = 5cm x 5cm)
@@ -544,6 +545,7 @@ class HighFiveEnvConfig(EnvConfig):
             "force_disturbances": self.force_disturbances,
             "force_disturbance_max": self.force_disturbance_max,
             "force_disturbance_duration": self.force_disturbance_duration,
+            "force_kicks_per_episode": self.force_kicks_per_episode,
             "facing_reward": self.facing_reward,
             "action_penalty": self.action_penalty,
             "palm_target_size": self.palm_target_size,
