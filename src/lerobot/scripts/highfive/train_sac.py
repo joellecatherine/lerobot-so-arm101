@@ -234,6 +234,12 @@ def parse_args() -> argparse.Namespace:
         help="Max Cartesian force magnitude on arm body (N)",
     )
     parser.add_argument(
+        "--force_disturbance_duration",
+        type=int,
+        default=15,
+        help="How many steps each force kick lasts",
+    )
+    parser.add_argument(
         "--facing_reward",
         action="store_true",
         help="Add reward for gripper pointing toward palm",
@@ -436,6 +442,7 @@ def create_env(args: argparse.Namespace) -> gym.vector.VectorEnv:
         randomize_hand_position=args.randomize_hand_position,
         force_disturbances=args.force_disturbances,
         force_disturbance_max=args.force_disturbance_max,
+        force_disturbance_duration=args.force_disturbance_duration,
         facing_reward=args.facing_reward,
         action_penalty=args.action_penalty,
         palm_target_size=args.palm_target_size,
@@ -1025,6 +1032,7 @@ def main():
     print(f"Force disturbances: {args.force_disturbances}")
     if args.force_disturbances:
         print(f"Force disturbance max: {args.force_disturbance_max}N")
+        print(f"Force disturbance duration: {args.force_disturbance_duration} steps")
     print(f"Facing reward: {args.facing_reward}")
     print(f"EE orientation: {args.ee_orientation}")
     print(f"Target entropy: {args.target_entropy}")
