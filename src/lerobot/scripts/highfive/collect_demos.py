@@ -115,15 +115,60 @@ def parse_args() -> argparse.Namespace:
         choices=["folded", "neutral"],
         help="Starting pose for robot arm",
     )
+    parser.add_argument(
+        "--ee_orientation",
+        action="store_true",
+        help="Include 6D EE orientation in expert state (must match trained model)",
+    )
+    parser.add_argument(
+        "--facing_reward",
+        action="store_true",
+        help="Enable facing reward in environment",
+    )
+    parser.add_argument(
+        "--randomize_hand_position",
+        action="store_true",
+        help="Randomize hand base position each episode",
+    )
+    parser.add_argument(
+        "--palm_target_size",
+        type=float,
+        default=0.05,
+        help="Palm target zone size in meters",
+    )
+    parser.add_argument(
+        "--force_disturbances",
+        action="store_true",
+        help="Apply random force kicks to arm during collection",
+    )
+    parser.add_argument(
+        "--force_disturbance_max",
+        type=float,
+        default=10.0,
+        help="Max Cartesian force magnitude on arm body (N)",
+    )
+    parser.add_argument(
+        "--force_disturbance_duration",
+        type=int,
+        default=8,
+        help="How many steps each force kick lasts",
+    )
+    parser.add_argument(
+        "--force_kicks_per_episode",
+        type=int,
+        default=3,
+        help="Max number of force kicks per episode",
+    )
     return parser.parse_args()
 
 
-def load_expert_policy(checkpoint_path: str, device: str):
+def load_expert_policy(checkpoint_path: str, device: str, ee_orientation: bool = False):
     """Load a trained state-based SAC policy from checkpoint.
 
     Args:
         checkpoint_path: Path to checkpoint directory containing model.safetensors
         device: Device to load the policy on
+        ee_orientation: Whether the expert was trained with ee_orientation (22-dim vs 16-dim state)
 
     Returns:
         Loaded policy in eval mode
@@ -140,17 +185,18 @@ def load_expert_policy(checkpoint_path: str, device: str):
     if not model_file.exists():
         raise FileNotFoundError(f"Model file not found: {model_file}")
 
-    # State-only expert: 19-dim input
-    # joint_pos(5) + joint_vel(5) + ee_pos(3) + hand_pos(3) + hand_vel(3)
+    # State-only expert:
+    # joint_pos(5) + joint_vel(5) + ee_pos(3) + [ee_orient(6)] + hand_pos(3)
+    state_dim = 22 if ee_orientation else 16
     input_features = {
-        OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(19,)),
+        OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(state_dim,)),
     }
     output_features = {
         ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(5,)),
     }
     encoder_config = {
         "latent_dim": 256,
-        "state_dim": 19,
+        "state_dim": state_dim,
         "encoder_type": "state",
         "single_camera": True,
     }
@@ -200,33 +246,45 @@ def create_env(args: argparse.Namespace):
         motion_freq_scale=args.motion_freq_scale,
         start_pose=args.start_pose,
         seed=args.seed,
+        ee_orientation=args.ee_orientation,
+        facing_reward=args.facing_reward,
+        randomize_hand_position=args.randomize_hand_position,
+        palm_target_size=args.palm_target_size,
+        force_disturbances=args.force_disturbances,
+        force_disturbance_max=args.force_disturbance_max,
+        force_disturbance_duration=args.force_disturbance_duration,
+        force_kicks_per_episode=args.force_kicks_per_episode,
     )
     return env
 
 
 def get_expert_state(env) -> np.ndarray:
-    """Extract the full 19-dim state vector for the expert from the environment.
+    """Extract the state vector for the expert from the environment.
 
-    The expert was trained with obs_type="state" which provides:
-        [joint_pos(5), joint_vel(5), ee_pos(3), hand_pos(3), hand_vel(3)] = 19 dims
+    Must match the env's _get_observation() for obs_type="state":
+        [joint_pos(5), joint_vel(5), ee_pos(3), [ee_orient(6)], hand_pos(3)]
+        = 16 dims without ee_orientation, 22 dims with ee_orientation
 
     Returns:
-        19-dim state vector as numpy array
+        State vector as numpy array (16 or 22 dims)
     """
-    joint_pos = env._get_joint_positions()   # 5
-    joint_vel = env._get_joint_velocities()  # 5
-    ee_pos = env._get_ee_position()          # 3
-    hand_pos = env._get_hand_position()      # 3
-    hand_vel = env._get_hand_velocity()      # 3
-    return np.concatenate([joint_pos, joint_vel, ee_pos, hand_pos, hand_vel])
+    parts = [
+        env._get_joint_positions(),   # 5
+        env._get_joint_velocities(),  # 5
+        env._get_ee_position(),       # 3
+    ]
+    if env.ee_orientation:
+        parts.append(env._get_ee_orientation())  # 6
+    parts.append(env._get_hand_position())        # 3
+    return np.concatenate(parts)
 
 
 def expert_select_action(policy, state: np.ndarray, device: str) -> np.ndarray:
-    """Select an action from the expert policy given state.
+    """Select a deterministic action from the expert policy given state.
 
     Args:
         policy: The loaded SAC expert policy
-        state: 11-dim state vector
+        state: State vector (16 or 22 dims depending on ee_orientation)
         device: Torch device
 
     Returns:
@@ -238,7 +296,7 @@ def expert_select_action(policy, state: np.ndarray, device: str) -> np.ndarray:
     obs = {OBS_STATE: state_tensor}
 
     with torch.no_grad():
-        action = policy.select_action(obs)
+        action = policy.select_action(obs, deterministic=True)
     return action.cpu().numpy().squeeze(0)
 
 
@@ -317,7 +375,7 @@ def collect_demos(args: argparse.Namespace):
 
     # Load expert
     print("Loading expert policy...")
-    policy = load_expert_policy(args.checkpoint, args.device)
+    policy = load_expert_policy(args.checkpoint, args.device, ee_orientation=args.ee_orientation)
 
     # Create environment
     print("Creating environment...")
@@ -330,9 +388,19 @@ def collect_demos(args: argparse.Namespace):
     successful_episodes = 0
     total_attempts = 0
 
+    state_dim = 22 if args.ee_orientation else 16
     print(f"\nCollecting {args.num_episodes} successful episodes...")
+    print(f"Expert state dim: {state_dim}")
     print(f"Hand motion: {args.hand_motion_type}")
     print(f"Domain randomization: {args.domain_randomization}")
+    print(f"EE orientation: {args.ee_orientation}")
+    print(f"Facing reward: {args.facing_reward}")
+    print(f"Randomize hand position: {args.randomize_hand_position}")
+    print(f"Palm target size: {args.palm_target_size}")
+    if args.force_disturbances:
+        print(f"Force disturbances: max={args.force_disturbance_max}N, "
+              f"duration={args.force_disturbance_duration}, "
+              f"kicks/ep={args.force_kicks_per_episode}")
     print(f"Image size: {args.observation_size}x{args.observation_size}")
     print()
 
@@ -357,18 +425,14 @@ def collect_demos(args: argparse.Namespace):
             action = expert_select_action(policy, expert_state, args.device)
 
             # Record frame: pixel observations + agent_pos + action
-            # Keep recording for a few frames after contact for smooth IL trajectories
-            if not contact_made or post_contact_frames < post_contact_limit:
-                frame = {
-                    "observation.images.birdseye": obs["pixels"]["birdseye"],
-                    "observation.images.wrist": obs["pixels"]["wrist"],
-                    "observation.state": obs["agent_pos"].astype(np.float32),
-                    "action": action.astype(np.float32),
-                    "task": "high-five with moving hand target",
-                }
-                episode_frames.append(frame)
-                if contact_made:
-                    post_contact_frames += 1
+            frame = {
+                "observation.images.birdseye": obs["pixels"]["birdseye"],
+                "observation.images.wrist": obs["pixels"]["wrist"],
+                "observation.state": obs["agent_pos"].astype(np.float32),
+                "action": action.astype(np.float32),
+                "task": "high-five with moving hand target",
+            }
+            episode_frames.append(frame)
 
             # Step environment
             obs, reward, terminated, truncated, info = env.step(action)
@@ -378,9 +442,16 @@ def collect_demos(args: argparse.Namespace):
             if not contact_made and info.get("is_success", False):
                 contact_made = True
 
-            # Stop early once post-contact frames are collected
-            if contact_made and post_contact_frames >= post_contact_limit:
-                break
+        # Record final observation (the contact frame) with a zero action
+        if contact_made:
+            frame = {
+                "observation.images.birdseye": obs["pixels"]["birdseye"],
+                "observation.images.wrist": obs["pixels"]["wrist"],
+                "observation.state": obs["agent_pos"].astype(np.float32),
+                "action": np.zeros(5, dtype=np.float32),
+                "task": "high-five with moving hand target",
+            }
+            episode_frames.append(frame)
 
         # Check success
         is_success = info.get("is_success", False)

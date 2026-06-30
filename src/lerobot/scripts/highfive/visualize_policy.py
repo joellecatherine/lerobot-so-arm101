@@ -40,6 +40,11 @@ def main():
     parser.add_argument("--facing_reward", action="store_true")
     parser.add_argument("--palm_target_size", type=float, default=0.05)
     parser.add_argument("--randomize_hand_position", action="store_true")
+    parser.add_argument("--force_disturbances", action="store_true")
+    parser.add_argument("--force_disturbance_max", type=float, default=10.0)
+    parser.add_argument("--force_disturbance_duration", type=int, default=8)
+    parser.add_argument("--force_kicks_per_episode", type=int, default=3)
+    parser.add_argument("--episode_length", type=int, default=100)
     args = parser.parse_args()
 
     from lerobot.envs.highfive.highfive_env import HighFiveEnv
@@ -59,6 +64,11 @@ def main():
         facing_reward=args.facing_reward,
         palm_target_size=args.palm_target_size,
         randomize_hand_position=args.randomize_hand_position,
+        force_disturbances=args.force_disturbances,
+        force_disturbance_max=args.force_disturbance_max,
+        force_disturbance_duration=args.force_disturbance_duration,
+        force_kicks_per_episode=args.force_kicks_per_episode,
+        episode_length=args.episode_length,
     )
 
     # Load policy
@@ -145,7 +155,7 @@ def main():
             with torch.no_grad():
                 # Wrap obs to look like vectorized env output (add batch dim for images)
                 policy_obs = preprocess_observation(obs, args.device)
-                action = policy.select_action(policy_obs)
+                action = policy.select_action(policy_obs, deterministic=True)
                 action = action.cpu().numpy().squeeze()
 
             obs, reward, terminated, truncated, info = env.step(action)

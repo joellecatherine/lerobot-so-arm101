@@ -639,7 +639,7 @@ def evaluate(
         while not done:
             with torch.no_grad():
                 policy_obs = preprocess_observation(obs, device)
-                action = policy.select_action(policy_obs)
+                action = policy.select_action(policy_obs, deterministic=True)
                 action = action.cpu().numpy()
 
             obs, reward, terminated, truncated, info = env.step(action)

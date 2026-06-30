@@ -81,14 +81,17 @@ class SACPolicy(
         raise NotImplementedError("SACPolicy does not support action chunking. It returns single actions!")
 
     @torch.no_grad()
-    def select_action(self, batch: dict[str, Tensor]) -> Tensor:
+    def select_action(self, batch: dict[str, Tensor], deterministic: bool = False) -> Tensor:
         """Select action for inference/evaluation"""
 
         observations_features = None
         if self.shared_encoder and self.actor.encoder.has_images:
             observations_features = self.actor.encoder.get_cached_image_features(batch)
 
-        actions, _, _ = self.actor(batch, observations_features)
+        actions, _, means = self.actor(batch, observations_features)
+        if deterministic:
+            # Use tanh(mean) for smooth, deterministic actions during evaluation
+            actions = torch.tanh(means)
 
         if self.config.num_discrete_actions is not None:
             discrete_action_value = self.discrete_critic(batch, observations_features)
