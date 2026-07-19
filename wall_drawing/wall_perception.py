@@ -30,8 +30,12 @@ CV_TO_ARKIT = np.diag([1.0, -1.0, -1.0])  # OpenCV cam frame -> ARKit cam frame
 
 # Tunables (adjust to your board / lighting / room).
 VOXEL = 0.03            # downsample voxel size (m)
-MAX_UP_DOT = 0.5        # |normal . up| below this = vertical plane
+MAX_UP_DOT = 0.30       # |normal . up| below this = vertical plane (stricter -> rejects floor)
 DIST_THRESH = 0.02      # RANSAC inlier distance (m)
+# The board is a known ~0.35 x 0.48 m panel. Require each in-plane span to fall in
+# this range: rejects blobs (too small) AND walls / big furniture (too big).
+BOARD_SIZE_MIN = 0.15
+BOARD_SIZE_MAX = 0.65
 # Darkness is adaptive (Otsu per frame) rather than a fixed value, so it tracks
 # lighting / auto-exposure. The Otsu split is clamped to this range for safety.
 DARK_THR_LO = 0.15
@@ -156,12 +160,27 @@ def fit_board_plane(points: np.ndarray, colors: np.ndarray, max_brightness: floa
 
         if vertical and dark:
             orig_inl = _largest_cluster(points[orig_inl], orig_inl)
-            if len(orig_inl) >= MIN_INLIERS:
+            if len(orig_inl) >= MIN_INLIERS and _size_matches(points[orig_inl], np.asarray(model[:3])):
                 return np.asarray(model), orig_inl, "board", skipped
         active[orig_inl] = False
         skipped += 1
 
     return None, None, "not found", skipped
+
+
+def _size_matches(pts: np.ndarray, normal: np.ndarray) -> bool:
+    """True if BOTH in-plane spans fall in [BOARD_SIZE_MIN, BOARD_SIZE_MAX].
+
+    Projects points onto two in-plane axes and checks the extents against the
+    known panel size -- rejects blobs (too small) and walls/big furniture (too big).
+    """
+    n = normal / (np.linalg.norm(normal) or 1.0)
+    ref = np.array([0.0, 1.0, 0.0]) if abs(n[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    u = np.cross(n, ref); u /= (np.linalg.norm(u) or 1.0)
+    v = np.cross(n, u)
+    proj = pts - pts.mean(axis=0)
+    lo, hi = sorted([np.ptp(proj @ u), np.ptp(proj @ v)])
+    return BOARD_SIZE_MIN <= lo and hi <= BOARD_SIZE_MAX
 
 
 def _largest_cluster(cluster_pts: np.ndarray, orig_idx: np.ndarray) -> np.ndarray:
