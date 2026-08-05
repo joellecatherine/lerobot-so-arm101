@@ -1,3 +1,32 @@
+# Personal robotics R&D — Joëlle Ackermann
+
+> **This is a research fork.** The upstream [LeRobot](https://github.com/huggingface/lerobot)
+> framework provides the hardware interfaces, dataset tooling, and policy
+> implementations; **the projects below are my own work**, built on top of it.
+
+### Projects in this fork
+
+- **Wall-drawing mobile manipulator** (branch [`wall-drawing`](../../tree/wall-drawing), directory `wall_drawing/`) — *active*.
+  A LeKiwi mobile base + SO-ARM101 arm that detects a chalk wall with iPhone
+  LiDAR, approaches it, and draws with closed-loop visual correction (in
+  progress). Includes a full depth-sensor noise characterization —
+  per-pixel temporal σ across materials and distances, an affine noise model,
+  and the discovery of float16 quantization in the depth stream — feeding
+  RANSAC plane detection with **statistically derived (not hand-tuned)
+  thresholds**. Write-up: [`wall_drawing/docs/01_sensor_noise.md`](../../blob/wall-drawing/wall_drawing/docs/01_sensor_noise.md).
+
+- **Privileged teacher → vision student distillation** (branch [`main`](../../tree/main),
+  `src/lerobot/envs/highfive/` and `src/lerobot/scripts/highfive/`) —
+  a reach-and-contact task in MuJoCo: SAC teacher on privileged state,
+  distilled into an ACT student (dual camera + proprioception).
+  Student 80% vs. teacher 64% success; includes reward-shaping iterations
+  (potential-based closing + facing gate), UTD ablation, and force-disturbance
+  experiments.
+
+*Original upstream README below.*
+
+---
+
 <p align="center">
   <img alt="LeRobot, Hugging Face Robotics Library" src="./media/readme/lerobot-logo-thumbnail.png" width="100%">
 </p>
